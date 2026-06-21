@@ -428,12 +428,21 @@ views['/portal'] = async () => {
   const done = p.checklist.filter((i) => i.status === 'complete').length;
   const pct = p.checklist.length ? Math.round((done / p.checklist.length) * 100) : 0;
   view.innerHTML = `
-    <div class="card" style="margin-bottom:20px">
-      <h1>Welcome to Optima, ${esc(p.firstName)}!</h1>
-      <p class="sub">${esc(p.position || '')}${p.startDate ? ` · starts ${esc(p.startDate)}` : ''}</p>
-      <p style="margin-top:14px;line-height:1.75">${esc(w.letter)}</p>
-      <p style="margin-top:12px;font-weight:600">${esc(w.signoff)}</p>
-      <p class="sub" style="margin-top:2px">— ${esc(w.ceoName)}, ${esc(w.ceoTitle)}</p>
+    <div class="portal-hero">
+      <img class="portal-hero-logo" src="/assets/optima-logo.png" alt="Optima">
+      <h1>Welcome to Team Optima</h1>
+      <p class="hero-sub">Hi ${esc(p.firstName)} — here's everything for your start${p.startDate ? ` on ${esc(p.startDate)}` : ''}.</p>
+      <div class="ceo-card">
+        <div class="ceo-header">
+          <img class="ceo-headshot" src="/assets/ceo-headshot.jpg" alt="${esc(w.ceoName)}">
+          <div><div class="ceo-name">${esc(w.ceoName)}</div><div class="ceo-title">${esc(w.ceoTitle)}</div></div>
+        </div>
+        <div class="ceo-letter">
+          <p>${esc(w.letter)}</p>
+          <p class="ceo-signoff">${esc(w.signoff)}</p>
+          <p class="ceo-signature">— ${esc(w.ceoName)}, ${esc(w.ceoTitle)}</p>
+        </div>
+      </div>
     </div>
     <h2>Your onboarding checklist</h2>
     <div class="checklist-progress" style="margin-bottom:14px">

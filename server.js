@@ -21,8 +21,7 @@ setupAuth(app);
 app.use('/api', requireAuth, portalApi);
 app.use('/api', api);
 
-// Reuse the existing brand assets (logos, headshot) from the repo.
-app.use('/assets', express.static(join(__dirname, '..', 'assets')));
+// Brand assets ship inside the app (public/assets) so it's self-contained.
 app.use(express.static(join(__dirname, 'public')));
 app.get('*', (_req, res) => res.sendFile(join(__dirname, 'public', 'index.html')));
 

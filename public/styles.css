@@ -113,3 +113,38 @@ textarea{min-height:80px;resize:vertical}
 .note{background:#f8fbfe;border-left:3px solid var(--bit);padding:11px 14px;border-radius:0 8px 8px 0;
   font-size:.85rem;color:var(--muted);margin-bottom:16px}
 .tag-soft{font-size:.72rem;color:var(--muted);background:#eef1f6;padding:2px 8px;border-radius:6px;margin-left:6px}
+
+/* ===== CANDIDATE PORTAL — branded welcome hero (mirrors landing page) ===== */
+.portal-hero{
+  position:relative; overflow:hidden; border-radius:var(--radius);
+  margin-bottom:22px; padding:40px 32px 36px;
+  background:url('/assets/welcome-bg.jpg') center/cover no-repeat;
+}
+.portal-hero::before{
+  content:''; position:absolute; inset:0; z-index:0;
+  background:linear-gradient(135deg, rgba(14,28,66,.78), rgba(20,39,82,.62) 55%, rgba(14,28,66,.78));
+}
+.portal-hero > *{ position:relative; z-index:1; }
+.portal-hero-logo{ position:absolute; top:24px; right:28px; height:40px; width:auto; z-index:2; }
+.portal-hero h1{ color:#fff; font-size:2rem; font-weight:800; max-width:70%; }
+.portal-hero .hero-sub{ color:rgba(255,255,255,.85); margin-top:8px; font-size:1rem; }
+
+.ceo-card{
+  background:#fff; border-radius:var(--radius); padding:26px;
+  box-shadow:0 8px 32px rgba(0,0,0,.18); max-width:760px; margin-top:24px;
+}
+.ceo-header{ display:flex; align-items:center; gap:18px; margin-bottom:18px; }
+.ceo-headshot{
+  width:84px; height:84px; border-radius:50%; object-fit:cover;
+  border:3px solid var(--bit); flex:none;
+}
+.ceo-name{ font-weight:700; font-size:1.1rem; color:var(--ink); }
+.ceo-title{ font-size:.9rem; color:var(--muted); }
+.ceo-letter p{ font-size:1rem; line-height:1.8; color:var(--ink); }
+.ceo-signoff{ margin-top:14px; font-weight:700; color:var(--ink); }
+.ceo-signature{ margin-top:4px; font-style:italic; color:var(--muted); font-size:.95rem; }
+@media(max-width:560px){
+  .portal-hero h1{ max-width:100%; font-size:1.6rem; }
+  .portal-hero-logo{ position:static; display:block; margin-bottom:16px; }
+  .ceo-header{ flex-direction:column; text-align:center; align-items:center; }
+}
