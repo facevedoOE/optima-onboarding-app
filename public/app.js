@@ -107,27 +107,29 @@ async function boot() {
 }
 
 // --- schema-driven field renderer ------------------------------------------
-function renderField(f, value = '') {
-  const req = f.required ? ' <span class="req">*</span>' : ' <span class="optional-tag">Optional</span>';
-  const oc = f.required ? '' : ' optional'; // grays out fields that aren't required
+function renderField(f, value = '', opts = {}) {
+  const req = f.required ? ' <span class="req">*</span>' : '';
+  const ro = opts.readonly ? 'disabled' : '';
   const v = esc(value);
   let input = '';
   switch (f.type) {
     case 'textarea':
-      input = `<textarea name="${f.key}" ${f.required ? 'required' : ''}>${v}</textarea>`; break;
+      input = `<textarea name="${f.key}" ${f.required ? 'required' : ''} ${ro}>${v}</textarea>`; break;
     case 'select':
-      input = `<select name="${f.key}" ${f.required ? 'required' : ''}><option value="">Select…</option>` +
+      input = `<select name="${f.key}" ${f.required ? 'required' : ''} ${ro}><option value="">Select…</option>` +
         (f.options || []).map((o) => `<option ${value === o ? 'selected' : ''}>${esc(o)}</option>`).join('') + `</select>`; break;
     case 'attestation':
-      return `<div class="field${oc}"><div class="attest"><input type="checkbox" name="${f.key}" id="f_${f.key}" ${value ? 'checked' : ''} ${f.required ? 'required' : ''}>
+      return `<div class="field"><div class="attest"><input type="checkbox" name="${f.key}" id="f_${f.key}" ${value ? 'checked' : ''} ${f.required ? 'required' : ''} ${ro}>
         <label for="f_${f.key}" style="margin:0">${esc(f.label)}${req}</label></div></div>`;
-    case 'date': input = `<input type="date" name="${f.key}" value="${v}" ${f.required ? 'required' : ''}>`; break;
-    case 'email': input = `<input type="email" name="${f.key}" value="${v}" ${f.required ? 'required' : ''}>`; break;
-    case 'tel': input = `<input type="tel" name="${f.key}" value="${v}" ${f.required ? 'required' : ''}>`; break;
-    case 'number': input = `<input type="number" name="${f.key}" value="${v}" ${f.required ? 'required' : ''}>`; break;
-    default: input = `<input type="text" name="${f.key}" value="${v}" placeholder="${esc(f.placeholder || '')}" ${f.required ? 'required' : ''}>`;
+    case 'signature':
+      input = `<input type="text" name="${f.key}" value="${v}" placeholder="Type your full legal name" ${f.required ? 'required' : ''} ${ro} class="signature-input">`; break;
+    case 'date': input = `<input type="date" name="${f.key}" value="${v}" ${f.required ? 'required' : ''} ${ro}>`; break;
+    case 'email': input = `<input type="email" name="${f.key}" value="${v}" ${f.required ? 'required' : ''} ${ro}>`; break;
+    case 'tel': input = `<input type="tel" name="${f.key}" value="${v}" ${f.required ? 'required' : ''} ${ro}>`; break;
+    case 'number': input = `<input type="number" name="${f.key}" value="${v}" ${f.required ? 'required' : ''} ${ro}>`; break;
+    default: input = `<input type="text" name="${f.key}" value="${v}" placeholder="${esc(f.placeholder || '')}" ${f.required ? 'required' : ''} ${ro}>`;
   }
-  return `<div class="field${oc}"><label>${esc(f.label)}${req}</label>${input}${f.help ? `<div class="help">${esc(f.help)}</div>` : ''}</div>`;
+  return `<div class="field"><label>${esc(f.label)}${req}</label>${input}${f.help ? `<div class="help">${esc(f.help)}</div>` : ''}</div>`;
 }
 
 function collectForm(formEl, fields) {
@@ -138,6 +140,40 @@ function collectForm(formEl, fields) {
     data[f.key] = f.type === 'attestation' ? node.checked : node.value;
   }
   return data;
+}
+
+// --- checklist rendering (grouping + badges + callouts) ---------------------
+const CHECKLIST_GROUPS = {
+  'oao-charter': 'For Optima Academy Online employees — select “9040 - Optima Classical Academy (OCA)” when asked for “Charter School Name.” Complete the form that applies to your employment type.',
+};
+
+function checklistItemHtml(item) {
+  const badges = [];
+  if (item.badge) badges.push(`<span class="cl-badge cl-badge-gold">${esc(item.badge)}</span>`);
+  if (item.formType) badges.push(`<span class="cl-badge">${esc(item.formType)}</span>`);
+  const action = item.status === 'complete'
+    ? (item.submissionId ? `<a class="btn ghost sm" href="/api/submissions/${item.submissionId}/pdf" target="_blank">View PDF</a>` : '')
+    : `<button class="btn sm" data-fill="${item.key}">${item.type === 'link' ? 'Schedule' : 'Complete'}</button>`;
+  return `<div class="row ${item.status === 'complete' ? 'done' : ''}">
+    <div><div class="t">${esc(item.title)}</div>
+      ${badges.length ? `<div class="cl-badges">${badges.join('')}</div>` : ''}
+      <div class="d">${esc(item.description || '')}</div></div>
+    <div class="row-actions">
+      <span class="pill ${item.status}">${item.status === 'complete' ? 'Complete' : 'To do'}</span>${action}
+    </div></div>`;
+}
+
+function checklistHtml(items) {
+  let html = '', i = 0;
+  while (i < items.length) {
+    const g = items[i].group;
+    if (g) {
+      const grp = [];
+      while (i < items.length && items[i].group === g) grp.push(items[i++]);
+      html += `<div class="cl-group">${CHECKLIST_GROUPS[g] ? `<div class="cl-callout">${esc(CHECKLIST_GROUPS[g])}</div>` : ''}${grp.map(checklistItemHtml).join('')}</div>`;
+    } else { html += checklistItemHtml(items[i++]); }
+  }
+  return html;
 }
 
 // --- views ------------------------------------------------------------------
@@ -197,16 +233,7 @@ views['/candidate/:id'] = async (id) => {
       <button class="btn ghost" id="sendLink">${c.portalLinkSentAt ? 'Resend' : 'Send'} portal link</button>
     </div>
     <h2>Onboarding checklist</h2>
-    ${c.checklist.map((item) => `
-      <div class="row ${item.status === 'complete' ? 'done' : ''}">
-        <div><div class="t">${esc(item.title)}</div><div class="d">${esc(item.description || '')}</div></div>
-        <div style="display:flex;gap:10px;align-items:center">
-          ${statusPill(item.status)}
-          ${item.status === 'complete'
-            ? `<a class="btn ghost sm" href="/api/submissions/${item.submissionId}/pdf" target="_blank">View PDF</a>`
-            : `<button class="btn sm" data-fill="${item.key}">Complete</button>`}
-        </div>
-      </div>`).join('')}
+    ${checklistHtml(c.checklist)}
     <h2 style="margin-top:24px">Access &amp; Hiring</h2>
     ${c.rth
       ? `<div class="row"><div><div class="t">Request to Hire</div><div class="d">${esc(c.rth.roleName || 'Custom access')}</div></div>
@@ -297,31 +324,43 @@ function embedFormHTML(def) {
     <div style="margin-top:14px"><button class="btn green" id="embedDone">I've completed this form</button></div>`;
 }
 
+function linkFormHTML(def) {
+  return `<div class="note">This opens an external scheduling page in a new tab. Once you've booked, mark it complete.</div>
+    <p style="margin:14px 0"><a class="btn gold" href="${esc(def.linkUrl)}" target="_blank" rel="noopener">Open scheduling page ↗</a></p>
+    <button class="btn green" id="linkDone">I've scheduled this</button>`;
+}
+
+// Render a fields form, filtered by who's filling it (two-party forms tag fields with `actor`).
+function fieldsFormHTML(def, actor) {
+  const note = def.twoParty
+    ? `<div class="note">${actor === 'candidate'
+        ? 'IT completes the equipment/access section (shown read-only below). Review it and sign.'
+        : 'You (IT) complete the equipment/access section. The candidate reviews and signs afterward.'}</div>`
+    : '';
+  const html = def.fields.map((f) => {
+    if (actor === 'admin' && f.actor === 'candidate') return '';
+    return renderField(f, '', { readonly: actor === 'candidate' && f.actor === 'admin' });
+  }).join('');
+  return note + html;
+}
+
 views['/fill/:cid/:key'] = async (cid, key) => {
   const [def, cand] = await Promise.all([api('/forms/' + key), api('/candidates/' + cid)]);
-  if (def.embedUrl) {
-    view.innerHTML = `<div class="crumb"><a href="#/">Candidates</a> › <a href="#/candidate/${cid}">${esc(cand.firstName)} ${esc(cand.lastName)}</a> › ${esc(def.title)}</div>
-      <h1>${esc(def.title)}</h1><p class="sub">${esc(def.description || '')}</p>${embedFormHTML(def)}`;
-    $('#embedDone').onclick = async () => {
-      try { await api('/submissions', { method: 'POST', body: { candidateId: cid, formKey: key, data: {} } }); toast('Marked complete'); go('/candidate/' + cid); }
-      catch (err) { toast(err.message); }
-    };
-    return;
-  }
-  view.innerHTML = `
-    <div class="crumb"><a href="#/">Candidates</a> › <a href="#/candidate/${cid}">${esc(cand.firstName)} ${esc(cand.lastName)}</a> › ${esc(def.title)}</div>
-    <h1>${esc(def.title)}</h1><p class="sub">${esc(def.description || '')}</p>
-    <div class="note">This form is rendered live from its definition (v${def.version}). On submit it generates a completed PDF and files it to the candidate's HR folder.</div>
-    <div class="card" style="max-width:680px">
-      <form id="f">${def.fields.map((f) => renderField(f)).join('')}
-        <button class="btn green" type="submit">Submit &amp; generate PDF</button></form>
-    </div>`;
+  const head = `<div class="crumb"><a href="#/">Candidates</a> › <a href="#/candidate/${cid}">${esc(cand.firstName)} ${esc(cand.lastName)}</a> › ${esc(def.title)}</div>
+    <h1>${esc(def.title)}</h1><p class="sub">${esc(def.description || '')}</p>`;
+  const markDone = async () => {
+    try { await api('/submissions', { method: 'POST', body: { candidateId: cid, formKey: key, data: {} } }); toast('Marked complete'); go('/candidate/' + cid); }
+    catch (err) { toast(err.message); }
+  };
+  if (def.embedUrl) { view.innerHTML = head + embedFormHTML(def); $('#embedDone').onclick = markDone; return; }
+  if (def.type === 'link' || def.linkUrl) { view.innerHTML = head + linkFormHTML(def); $('#linkDone').onclick = markDone; return; }
+  view.innerHTML = head + `<div class="card" style="max-width:680px"><form id="f">${fieldsFormHTML(def, 'admin')}
+    <button class="btn green" type="submit">Submit</button></form></div>`;
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     try {
       await api('/submissions', { method: 'POST', body: { candidateId: cid, formKey: key, data: collectForm(e.target, def.fields) } });
-      toast('Submitted — PDF filed');
-      go('/candidate/' + cid);
+      toast('Submitted'); go('/candidate/' + cid);
     } catch (err) { toast(err.message); }
   };
 };
@@ -543,16 +582,7 @@ views['/portal'] = async () => {
       <div class="bar-label"><span>Progress</span><span>${done} of ${p.checklist.length} complete</span></div>
       <div class="bar"><div style="width:${pct}%"></div></div>
     </div>
-    ${p.checklist.map((item) => `
-      <div class="row ${item.status === 'complete' ? 'done' : ''}">
-        <div><div class="t">${esc(item.title)}</div><div class="d">${esc(item.description || '')}</div></div>
-        <div style="display:flex;gap:10px;align-items:center">
-          <span class="pill ${item.status}">${item.status === 'complete' ? 'Complete' : 'To do'}</span>
-          ${item.status === 'complete'
-            ? `<a class="btn ghost sm" href="/api/submissions/${item.submissionId}/pdf" target="_blank">View PDF</a>`
-            : `<button class="btn sm" data-fill="${item.key}">Complete</button>`}
-        </div>
-      </div>`).join('')}
+    ${checklistHtml(p.checklist)}
     <h2>Resources</h2>
     <div class="grid g3">${w.resources.map((r) => `<div class="card resource-card"><div class="cand-name" style="font-size:1rem">${esc(r.title)}</div><div class="cand-meta" style="margin:0">${esc(r.desc)}</div></div>`).join('')}</div>`;
   view.querySelectorAll('[data-fill]').forEach((b) => b.onclick = () => go('/myform/' + b.dataset.fill));
@@ -560,21 +590,16 @@ views['/portal'] = async () => {
 
 views['/myform/:key'] = async (key) => {
   const def = await api('/forms/' + key);
-  if (def.embedUrl) {
-    view.innerHTML = `<div class="crumb"><a href="#/portal">My Portal</a> › ${esc(def.title)}</div>
-      <h1>${esc(def.title)}</h1><p class="sub">${esc(def.description || '')}</p>${embedFormHTML(def)}`;
-    $('#embedDone').onclick = async () => {
-      try { await api('/submissions', { method: 'POST', body: { formKey: key, data: {} } }); toast('Marked complete'); go('/portal'); }
-      catch (err) { toast(err.message); }
-    };
-    return;
-  }
-  view.innerHTML = `
-    <div class="crumb"><a href="#/portal">My Portal</a> › ${esc(def.title)}</div>
-    <h1>${esc(def.title)}</h1><p class="sub">${esc(def.description || '')}</p>
-    <div class="card" style="max-width:680px">
-      <form id="f">${def.fields.map((f) => renderField(f)).join('')}
-        <button class="btn green" type="submit">Submit</button></form></div>`;
+  const head = `<div class="crumb"><a href="#/portal">My Portal</a> › ${esc(def.title)}</div>
+    <h1>${esc(def.title)}</h1><p class="sub">${esc(def.description || '')}</p>`;
+  const markDone = async () => {
+    try { await api('/submissions', { method: 'POST', body: { formKey: key, data: {} } }); toast('Marked complete'); go('/portal'); }
+    catch (err) { toast(err.message); }
+  };
+  if (def.embedUrl) { view.innerHTML = head + embedFormHTML(def); $('#embedDone').onclick = markDone; return; }
+  if (def.type === 'link' || def.linkUrl) { view.innerHTML = head + linkFormHTML(def); $('#linkDone').onclick = markDone; return; }
+  view.innerHTML = head + `<div class="card" style="max-width:680px"><form id="f">${fieldsFormHTML(def, 'candidate')}
+    <button class="btn green" type="submit">Submit</button></form></div>`;
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     try { await api('/submissions', { method: 'POST', body: { formKey: key, data: collectForm(e.target, def.fields) } }); toast('Submitted'); go('/portal'); }

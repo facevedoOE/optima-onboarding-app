@@ -47,7 +47,11 @@ function candidateDetail(c) {
   const subs = db.filter('submissions', (s) => s.candidateId === c.id);
   const checklist = applicable.map((d) => {
     const sub = subs.find((s) => s.formKey === d.key);
-    return { key: d.key, title: d.title, description: d.description, status: sub ? sub.status : 'pending', submissionId: sub?.id };
+    return {
+      key: d.key, title: d.title, description: d.description,
+      status: sub ? sub.status : 'pending', submissionId: sub?.id,
+      group: d.group, badge: d.badge, formType: d.formType, type: d.type,
+    };
   });
   const r = db.find('accessRequests', (a) => a.candidateId === c.id);
   const rth = r ? { id: r.id, status: r.status, roleName: r.roleName } : null;
@@ -104,13 +108,16 @@ portalApi.post('/submissions', async (req, res) => {
   const submission = db.insert('submissions', { candidateId, formKey, data, status: 'complete', submittedAt: nowISO() });
 
   let fileName, filedPath;
-  if (def.type === 'embed' || def.embedUrl) {
-    // Completed on the real external document (Adobe Sign). The app records
-    // completion; the signed PDF is filed by Adobe's webhook → your existing flow.
-    filedPath = 'Completed on the official document (Adobe Sign → filed via webhook)';
+  if (def.type === 'embed' || def.embedUrl || def.type === 'link' || def.linkUrl) {
+    // Completed on an external system (Adobe Sign document or a booking page).
+    // The app records completion; no PDF is generated here.
+    filedPath = def.type === 'link' || def.linkUrl
+      ? 'Scheduled on the external booking page'
+      : 'Completed on the official document (Adobe Sign → filed via webhook)';
     if (candidate) {
       const activity = candidate.activity || [];
-      activity.unshift({ at: nowISO(), kind: 'external', message: `Completed “${def.title}” on the official Adobe document` });
+      const msg = (def.type === 'link' || def.linkUrl) ? `Scheduled “${def.title}”` : `Completed “${def.title}” on the official document`;
+      activity.unshift({ at: nowISO(), kind: 'external', message: msg });
       db.update('candidates', candidate.id, { activity });
     }
   } else if (def.pdfTemplate) {

@@ -220,3 +220,23 @@ html[data-theme="dark"] .pill.provisioning{background:rgba(165,62,151,.3);color:
   .btn{padding:11px 16px}
   iframe{height:72vh!important}
 }
+
+/* ===== Checklist: keep status pill + action on one line ===== */
+.pill{white-space:nowrap}
+.row-actions{display:flex;gap:10px;align-items:center;flex:none;flex-wrap:wrap}
+
+/* ===== Checklist groups, callouts, badges (charter forms) ===== */
+.cl-group{border:1px solid rgba(85,200,232,.25);border-left:3px solid var(--bit);
+  border-radius:0 var(--radius) var(--radius) 0;padding:14px 14px 5px;margin-bottom:9px;background:rgba(85,200,232,.05)}
+.cl-callout{background:#eef6ff;border-left:3px solid var(--bit);border-radius:0 8px 8px 0;
+  padding:10px 12px;font-size:.84rem;color:var(--muted);margin-bottom:12px}
+.cl-badges{display:flex;flex-wrap:wrap;gap:6px;margin:5px 0 3px}
+.cl-badge{font-size:.66rem;font-weight:700;padding:2px 8px;border-radius:6px;background:#eef1f6;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.03em}
+.cl-badge-gold{background:var(--gold);color:#fff}
+.signature-input{font-family:'Segoe Script','Snell Roundhand','Brush Script MT',cursive;font-size:1.15rem}
+
+html[data-theme="dark"] .cl-group{background:rgba(85,200,232,.06)}
+html[data-theme="dark"] .cl-callout{background:#0e1c3f;color:var(--muted)}
+html[data-theme="dark"] .cl-badge{background:rgba(255,255,255,.08);color:var(--muted)}
+html[data-theme="dark"] .cl-badge-gold{background:var(--gold);color:#fff}
