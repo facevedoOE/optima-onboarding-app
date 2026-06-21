@@ -5,6 +5,14 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const view = $('#view');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// "2026-08-10" -> "August 10" (parsed by parts to avoid timezone shifts)
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function monthDay(iso) {
+  if (!iso) return '';
+  const [, m, d] = String(iso).split('-').map(Number);
+  return (m && d) ? `${MONTHS[m - 1]} ${d}` : iso;
+}
+
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
     headers: { 'Content-Type': 'application/json' },
@@ -229,7 +237,7 @@ views['/candidate/:id'] = async (id) => {
     <div class="crumb"><a href="#/">Candidates</a> › ${esc(c.firstName)} ${esc(c.lastName)}</div>
     <div class="page-head">
       <div><h1>${esc(c.firstName)} ${esc(c.lastName)}</h1>
-      <p class="sub">${esc(c.position || '—')} · ${esc(c.employeeType || '')} · starts ${esc(c.startDate || '—')}</p></div>
+      <p class="sub">${esc(c.position || '—')} · ${esc(c.employeeType || '')} · starts ${esc(monthDay(c.startDate) || '—')}</p></div>
       <button class="btn ghost" id="sendLink">${c.portalLinkSentAt ? 'Resend' : 'Send'} portal link</button>
     </div>
     <h2>Onboarding checklist</h2>
@@ -565,7 +573,7 @@ views['/portal'] = async () => {
     <div class="portal-hero">
       <img class="portal-hero-logo" src="/assets/optima-logo.png" alt="Optima">
       <h1>Welcome to Team Optima</h1>
-      <p class="hero-sub">Hi ${esc(p.firstName)} — here's everything for your start${p.startDate ? ` on ${esc(p.startDate)}` : ''}.</p>
+      <p class="hero-sub">Hi ${esc(p.firstName)} — here's everything for your start${p.startDate ? ` on ${esc(monthDay(p.startDate))}` : ''}.</p>
       <div class="ceo-card">
         <div class="ceo-header">
           <img class="ceo-headshot" src="/assets/ceo-headshot.jpg" alt="${esc(w.ceoName)}">
