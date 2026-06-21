@@ -240,3 +240,14 @@ html[data-theme="dark"] .cl-group{background:rgba(85,200,232,.06)}
 html[data-theme="dark"] .cl-callout{background:#0e1c3f;color:var(--muted)}
 html[data-theme="dark"] .cl-badge{background:rgba(255,255,255,.08);color:var(--muted)}
 html[data-theme="dark"] .cl-badge-gold{background:var(--gold);color:#fff}
+
+/* ===== Compiled log tables ===== */
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--card)}
+table.log{width:100%;border-collapse:collapse;font-size:.85rem;min-width:640px}
+table.log th{text-align:left;font-family:'Wix Madefor Display',sans-serif;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--muted);padding:11px 12px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--bg)}
+table.log td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink)}
+table.log tr:last-child td{border-bottom:none}
+table.log tbody tr:hover{background:rgba(85,200,232,.06)}
+table.log td .empty{padding:30px;text-align:center}
+html[data-theme="dark"] table.log th{background:rgba(255,255,255,.03)}

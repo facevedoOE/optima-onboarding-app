@@ -233,6 +233,17 @@ api.get('/candidates/:id', (req, res) => {
   res.json(candidateDetail(c));
 });
 
+// Admin: compiled log of every submission for a form (one page per form).
+api.get('/log/:formKey', (req, res) => {
+  const def = db.find('formDefinitions', (d) => d.key === req.params.formKey);
+  if (!def) return res.status(404).json({ error: 'unknown form' });
+  const rows = db.filter('submissions', (s) => s.formKey === req.params.formKey).map((s) => {
+    const c = s.candidateId ? db.get('candidates', s.candidateId) : null;
+    return { submissionId: s.id, candidateId: s.candidateId, candidateName: c ? `${c.firstName} ${c.lastName}` : '—', data: s.data, submittedAt: s.submittedAt };
+  });
+  res.json({ title: def.title, fields: def.fields, rows });
+});
+
 // Admin: read a submission's answers (logged on the admin side).
 api.get('/submissions/:id', (req, res) => {
   const s = db.get('submissions', req.params.id);

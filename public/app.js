@@ -121,7 +121,7 @@ async function boot() {
     router();
   } else {
     nav.style.display = '';
-    nav.innerHTML = '<a href="#/" data-route="/">Candidates</a><a href="#/rth" data-route="/rth">Request to Hire</a><a href="#/forms" data-route="/forms">Form Builder</a>';
+    nav.innerHTML = '<a href="#/" data-route="/">Candidates</a><a href="#/rth" data-route="/rth">Request to Hire</a><a href="#/log/teacher-cert" data-route="/log">Compliance</a><a href="#/forms" data-route="/forms">Form Builder</a>';
     router();
   }
 }
@@ -510,16 +510,25 @@ views['/forms/:key'] = async (key) => {
 // --- Request to Hire --------------------------------------------------------
 views['/rth'] = async () => {
   const list = await api('/rth');
+  const sig = (r, k) => { const s = r.signatures.find((x) => x.key === k); return s && s.signedAt ? '✓' : '—'; };
   view.innerHTML = `
-    <div class="page-head"><div><h1>Request to Hire</h1>
-      <p class="sub">Signature chain + access provisioning. The readable replacement for the wide spreadsheet.</p></div>
+    <div class="page-head"><div><h1>Request to Hire — Log</h1>
+      <p class="sub">Every request, compiled. Replaces the wide spreadsheet.</p></div>
       <button class="btn gold" id="new">+ New Request</button></div>
-    ${list.length ? list.map((r) => `<div class="row click" data-id="${r.id}">
-      <div><div class="t">${esc(r.data.candidateName)}</div><div class="d">${esc(r.data.position)} · ${esc(r.roleName || '')}</div></div>
-      <span class="pill ${r.status}">${esc(r.status.replace(/-/g, ' '))}</span></div>`).join('')
-      : '<div class="empty">No requests yet.</div>'}`;
+    <div class="table-wrap"><table class="log">
+      <thead><tr><th>Candidate</th><th>Position</th><th>Role</th><th>Pay Rate</th><th>Access</th><th>HR</th><th>Finance</th><th>CEO</th><th>Status</th><th></th></tr></thead>
+      <tbody>${list.length ? list.map((r) => `<tr>
+        <td><strong>${esc(r.data.candidateName)}</strong></td>
+        <td>${esc(r.data.position || '—')}</td>
+        <td>${esc(r.roleName || 'Custom')}</td>
+        <td>${esc(r.data.payRate || '—')}</td>
+        <td>${(r.items || []).length}</td>
+        <td>${sig(r, 'hr')}</td><td>${sig(r, 'finance')}</td><td>${sig(r, 'ceo')}</td>
+        <td><span class="pill ${r.status}">${esc(r.status.replace(/-/g, ' '))}</span></td>
+        <td><a href="#/rth/${r.id}">Open</a></td></tr>`).join('')
+      : `<tr><td colspan="10" class="empty">No requests yet.</td></tr>`}</tbody>
+    </table></div>`;
   $('#new').onclick = () => go('/rth/new');
-  view.querySelectorAll('.row.click').forEach((el) => { el.style.cursor = 'pointer'; el.onclick = () => go('/rth/' + el.dataset.id); });
 };
 
 async function rthNew(prefillId) {
@@ -731,10 +740,30 @@ views['/submission/:id'] = async (id) => {
     </div>`;
 };
 
+// --- Admin: compiled log of all submissions for a form ----------------------
+views['/log/:key'] = async (key) => {
+  const log = await api('/log/' + key);
+  const cols = log.fields.filter((f) => !['file', 'attestation', 'signature'].includes(f.type));
+  const fileFields = log.fields.filter((f) => f.type === 'file');
+  view.innerHTML = `
+    <div class="page-head"><div><h1>${esc(log.title)} — Log</h1>
+      <p class="sub">Every submission, compiled on one page.</p></div></div>
+    <div class="table-wrap"><table class="log">
+      <thead><tr><th>Candidate</th>${cols.map((f) => `<th>${esc(f.label)}</th>`).join('')}<th>Docs</th><th></th></tr></thead>
+      <tbody>${log.rows.length ? log.rows.map((r) => `<tr>
+        <td><strong>${esc(r.candidateName)}</strong></td>
+        ${cols.map((f) => { let v = r.data?.[f.key]; if (Array.isArray(v)) v = v.join(', '); return `<td>${esc(v || '—')}</td>`; }).join('')}
+        <td>${fileFields.filter((f) => r.data?.[f.key]).length || '—'}</td>
+        <td><a href="#/submission/${r.submissionId}">Open</a></td></tr>`).join('')
+      : `<tr><td colspan="${cols.length + 3}" class="empty">No submissions yet.</td></tr>`}</tbody>
+    </table></div>`;
+};
+
 // --- router -----------------------------------------------------------------
 const routes = [
   ['/', views['/']],
   ['/portal', views['/portal']],
+  ['/log/:key', views['/log/:key']],
   ['/submission/:id', views['/submission/:id']],
   ['/provision', views['/provision']],
   ['/provision/:id', views['/provision/:id']],
