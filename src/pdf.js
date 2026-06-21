@@ -48,6 +48,41 @@ function pretty(value) {
   return String(value);
 }
 
+// Permissions-only document for whoever provisions access. Deliberately omits
+// salary and approval details so permission-granters never see pay.
+export async function generatePermissionsPdf({ rth }) {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  let page = pdf.addPage([612, 792]);
+  const M = 54; let y = 792 - M;
+  const ensure = (n) => { if (y - n < M) { page = pdf.addPage([612, 792]); y = 792 - M; } };
+  const clip = (s) => String(s).length > 88 ? String(s).slice(0, 85) + '…' : String(s);
+
+  page.drawRectangle({ x: 0, y: 792 - 8, width: 612, height: 8, color: BIT });
+  page.drawText('OPTIMA', { x: M, y, size: 20, font: bold, color: BLUE }); y -= 28;
+  page.drawText('Access Provisioning — Request to Hire', { x: M, y, size: 15, font: bold, color: BLUE }); y -= 16;
+  page.drawText(`${rth.data?.candidateName || ''} · ${rth.data?.position || ''} · starts ${rth.data?.startDate || ''}`, { x: M, y, size: 10, font, color: GREY }); y -= 13;
+  page.drawText(`Role: ${rth.roleName || 'Custom access'}`, { x: M, y, size: 9, font, color: GREY }); y -= 10;
+  page.drawLine({ start: { x: M, y }, end: { x: M + (612 - M * 2), y }, thickness: 1, color: LINE }); y -= 22;
+
+  const byDept = {};
+  for (const it of (rth.items || [])) (byDept[it.dept] = byDept[it.dept] || []).push(it);
+  for (const [dept, items] of Object.entries(byDept)) {
+    ensure(30);
+    page.drawText(String(dept).toUpperCase(), { x: M, y, size: 9, font: bold, color: BIT }); y -= 16;
+    for (const it of items) { ensure(16); page.drawText(`•  ${it.label}  (${it.status})`, { x: M + 8, y, size: 10, font, color: BLUE }); y -= 14; }
+    y -= 6;
+  }
+  const notes = [['Other software', rth.data?.softwareOther], ['Other hardware', rth.data?.hardwareOther], ['LLM / AI', rth.data?.llmDetails], ['Admin permissions', rth.data?.adminPermissions]].filter(([, v]) => v);
+  if (notes.length) {
+    ensure(24); page.drawText('NOTES', { x: M, y, size: 9, font: bold, color: BIT }); y -= 16;
+    for (const [k, v] of notes) { ensure(16); page.drawText(`${k}: ${clip(v)}`, { x: M, y, size: 10, font, color: BLUE }); y -= 14; }
+  }
+  page.drawText('Salary and approval details are intentionally omitted from this permissions document.', { x: M, y: M - 18, size: 7, font, color: GREY });
+  return await pdf.save();
+}
+
 export async function generateSubmissionPdf({ definition, submission, candidate, signatures }) {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);

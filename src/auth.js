@@ -122,6 +122,10 @@ export function setupAuth(app) {
       req.session.user = { role: 'candidate', candidateId: c.id, name: `${c.firstName} ${c.lastName}`, email: c.email };
       res.json(req.session.user);
     });
+    app.post('/auth/dev-provisioner', (req, res) => {
+      req.session.user = { role: 'provisioner', name: 'Provisioner', email: 'it@optimaed.com' };
+      res.json(req.session.user);
+    });
     app.get('/auth/logout', (req, res) => req.session.destroy(() => res.redirect('/')));
   }
 }
@@ -138,4 +142,10 @@ export function requireAuth(req, res, next) {
 export function requireAdmin(req, res, next) {
   if (req.session?.user?.role === 'admin') return next();
   res.status(403).json({ error: 'Admin access required' });
+}
+// Permission-granters: provisioners (salary-free view) or admins.
+export function requireProvisioner(req, res, next) {
+  const r = req.session?.user?.role;
+  if (r === 'provisioner' || r === 'admin') return next();
+  res.status(403).json({ error: 'Provisioner access required' });
 }

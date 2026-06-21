@@ -84,14 +84,20 @@ async function renderLoginUI(me) {
       <div style="display:flex;flex-direction:column;gap:8px">
         ${cands.map((c) => `<button class="btn ghost" data-cand="${c.id}">${esc(c.name)}</button>`).join('')}</div>`;
   }
+  const provBlock = me.mode === 'live'
+    ? `<p class="help">Permission-granters sign in with Microsoft; they see a salary-free provisioning view.</p>`
+    : `<button class="btn ghost" id="loginProvisioner">Continue as Provisioner (IT)</button>`;
   view.innerHTML = `<div class="card" style="max-width:480px;margin:48px auto">
-    <div style="color:var(--blue);font-weight:800;font-size:1.3rem;text-align:center;margin-bottom:6px">OPTIMA · Onboarding</div>
+    <div class="brandmark" style="font-size:1.3rem;text-align:center;margin-bottom:6px">OPTIMA · Onboarding</div>
     <p class="sub" style="text-align:center;margin-bottom:22px">${me.mode === 'live' ? 'Sign in to continue.' : 'Demo mode — choose how to sign in.'}</p>
     <div class="dept-group"><h4>Admin / Staff</h4>${adminBlock}</div>
+    <div class="dept-group" style="margin-top:20px"><h4>Provisioner (grants access — no salary shown)</h4>${provBlock}</div>
     <div class="dept-group" style="margin-top:20px"><h4>Candidate (new hire)</h4>${candBlock}</div>
   </div>`;
   const a = $('#loginAdmin');
   if (a) a.onclick = async () => { await fetch('/auth/dev-admin', { method: 'POST' }); boot(); };
+  const pv = $('#loginProvisioner');
+  if (pv) pv.onclick = async () => { await fetch('/auth/dev-provisioner', { method: 'POST' }); location.hash = '#/provision'; boot(); };
   view.querySelectorAll('[data-cand]').forEach((b) => b.onclick = async () => {
     await fetch('/auth/dev-candidate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidateId: b.dataset.cand }) });
     location.hash = '#/portal'; boot();
@@ -108,8 +114,14 @@ async function boot() {
     nav.style.display = 'none';
     if (!location.hash.startsWith('#/portal') && !location.hash.startsWith('#/myform/')) { location.hash = '#/portal'; }
     router();
+  } else if (ME.role === 'provisioner') {
+    nav.style.display = '';
+    nav.innerHTML = '<a href="#/provision" data-route="/provision">Provisioning</a>';
+    if (!location.hash.startsWith('#/provision')) { location.hash = '#/provision'; }
+    router();
   } else {
     nav.style.display = '';
+    nav.innerHTML = '<a href="#/" data-route="/">Candidates</a><a href="#/rth" data-route="/rth">Request to Hire</a><a href="#/forms" data-route="/forms">Form Builder</a>';
     router();
   }
 }
@@ -619,10 +631,49 @@ views['/myform/:key'] = async (key) => {
   };
 };
 
+// --- Provisioner views (salary-free) ---------------------------------------
+views['/provision'] = async () => {
+  const list = await api('/provisioner/rth');
+  view.innerHTML = `
+    <div class="page-head"><div><h1>Access Provisioning</h1>
+      <p class="sub">Grant software &amp; equipment for approved hires. Salary is never shown here.</p></div></div>
+    ${list.length ? list.map((r) => `<div class="row click" data-id="${r.id}">
+      <div><div class="t">${esc(r.candidateName)}</div><div class="d">${esc(r.position || '')} · ${esc(r.roleName || '')}</div></div>
+      <span class="pill ${r.status}">${esc(r.status.replace(/-/g, ' '))}</span></div>`).join('')
+      : '<div class="empty">No approved requests to provision yet.</div>'}`;
+  view.querySelectorAll('.row.click').forEach((el) => { el.style.cursor = 'pointer'; el.onclick = () => go('/provision/' + el.dataset.id); });
+};
+
+views['/provision/:id'] = async (id) => {
+  const r = await api('/provisioner/rth/' + id);
+  const NL = { softwareOther: 'Other software', hardwareOther: 'Other hardware', llmDetails: 'LLM / AI', adminPermissions: 'Admin permissions' };
+  const byDept = {};
+  for (const it of r.items) (byDept[it.dept] = byDept[it.dept] || []).push(it);
+  const notes = Object.entries(r.notes || {}).filter(([, v]) => v);
+  view.innerHTML = `
+    <div class="crumb"><a href="#/provision">Provisioning</a> › ${esc(r.candidateName)}</div>
+    <div class="page-head"><div><h1>${esc(r.candidateName)}</h1>
+      <p class="sub">${esc(r.position || '')} · ${esc(r.roleName || 'Custom access')} · starts ${esc(monthDay(r.startDate) || '—')}</p></div>
+      <a class="btn ghost sm" href="/api/provisioner/rth/${id}/pdf" target="_blank">Permissions PDF</a></div>
+    <div class="note">Salary and approval details are not shown to provisioners.</div>
+    <h2>Access to provision</h2>
+    ${Object.entries(byDept).map(([d, items]) => `<div class="dept-group"><h4>${esc(d)}</h4>
+      ${items.map((it) => `<div class="row" style="margin-bottom:6px"><div class="t" style="font-size:.9rem">${esc(it.label)}</div>
+        ${it.status === 'provisioned' ? '<span class="pill provisioned">Provisioned</span>' : `<button class="btn sm" data-prov="${it.key}">Provision</button>`}</div>`).join('')}
+    </div>`).join('') || '<div class="empty">No access items requested.</div>'}
+    ${notes.length ? `<h2>Notes</h2><div class="card">${notes.map(([k, v]) => `<div class="d" style="margin-bottom:6px"><strong>${esc(NL[k] || k)}:</strong> ${esc(v)}</div>`).join('')}</div>` : ''}`;
+  view.querySelectorAll('[data-prov]').forEach((b) => b.onclick = async () => {
+    try { await api('/provisioner/rth/' + id + '/provision', { method: 'POST', body: { itemKey: b.dataset.prov } }); toast('Provisioned'); views['/provision/:id'](id); }
+    catch (err) { toast(err.message); }
+  });
+};
+
 // --- router -----------------------------------------------------------------
 const routes = [
   ['/', views['/']],
   ['/portal', views['/portal']],
+  ['/provision', views['/provision']],
+  ['/provision/:id', views['/provision/:id']],
   ['/myform/:key', views['/myform/:key']],
   ['/candidate/new', views['/candidate/new']],
   ['/candidate/:id', views['/candidate/:id']],

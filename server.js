@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './src/config.js';
 import { setupAuth, requireAuth } from './src/auth.js';
-import { api, portalApi, webhookRouter, runReferenceReminders } from './src/routes/api.js';
+import { api, portalApi, provisionerApi, webhookRouter, runReferenceReminders } from './src/routes/api.js';
 import { db } from './src/db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -22,6 +22,7 @@ app.use('/api/webhooks', webhookRouter);
 // then admin-only routes. A candidate hitting an admin route falls through to
 // requireAdmin inside the admin router → 403.
 app.use('/api', requireAuth, portalApi);
+app.use('/api', requireAuth, provisionerApi);
 app.use('/api', api);
 
 // Brand assets ship inside the app (public/assets) so it's self-contained.

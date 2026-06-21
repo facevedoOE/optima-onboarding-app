@@ -4,8 +4,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db, nowISO } from '../db.js';
 import { config } from '../config.js';
-import { requireAdmin, candidatePortalUrl } from '../auth.js';
-import { generateSubmissionPdf, fillPdfTemplate } from '../pdf.js';
+import { requireAdmin, requireProvisioner, candidatePortalUrl } from '../auth.js';
+import { generateSubmissionPdf, fillPdfTemplate, generatePermissionsPdf } from '../pdf.js';
 import { sharepoint, graph, notify } from '../adapters/integrations.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -389,8 +389,12 @@ api.post('/rth/:id/sign', async (req, res) => {
   if (allSigned) {
     const def = db.find('formDefinitions', (d) => d.isRTH);
     const submission = { id: r.id, data: r.data, submittedAt: nowISO() };
+    // Leadership PDF — includes pay rate; for HR/Finance/CEO only.
     const bytes = await generateSubmissionPdf({ definition: def, submission, candidate: null, signatures: r.signatures });
     writeFileSync(join(PDF_DIR, `${r.id}.pdf`), bytes);
+    // Permissions PDF — salary-free; this is what provisioners receive.
+    const permBytes = await generatePermissionsPdf({ rth: r });
+    writeFileSync(join(PDF_DIR, `${r.id}-permissions.pdf`), permBytes);
 
     // If linked to a candidate, everything ties back to their record.
     const linked = r.candidateId ? db.get('candidates', r.candidateId) : null;
@@ -429,4 +433,51 @@ api.post('/rth/:id/provision', async (req, res) => {
   r.status = r.items.every((i) => i.status === 'provisioned') ? 'complete' : 'provisioning';
   db.update('accessRequests', r.id, { items: r.items, status: r.status });
   res.json(db.get('accessRequests', r.id));
+});
+
+// ===========================================================================
+// PROVISIONER ROUTER — for whoever grants software/equipment access.
+// Salary and approval details are NEVER exposed here.
+// ===========================================================================
+export const provisionerApi = Router();
+provisionerApi.use(requireProvisioner);
+
+const READY = ['approved', 'provisioning', 'complete'];
+function permView(r) {
+  return {
+    id: r.id, status: r.status,
+    candidateName: r.data?.candidateName, position: r.data?.position,
+    startDate: r.data?.startDate, roleName: r.roleName, items: r.items,
+    notes: { softwareOther: r.data?.softwareOther, hardwareOther: r.data?.hardwareOther, llmDetails: r.data?.llmDetails, adminPermissions: r.data?.adminPermissions },
+    // NOTE: payRate / signatures deliberately omitted.
+  };
+}
+
+provisionerApi.get('/provisioner/rth', (_req, res) => {
+  res.json(db.filter('accessRequests', (r) => READY.includes(r.status)).map(permView));
+});
+provisionerApi.get('/provisioner/rth/:id', (req, res) => {
+  const r = db.get('accessRequests', req.params.id);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  if (!READY.includes(r.status)) return res.status(403).json({ error: 'Not yet approved' });
+  res.json(permView(r));
+});
+provisionerApi.post('/provisioner/rth/:id/provision', async (req, res) => {
+  const r = db.get('accessRequests', req.params.id);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  if (r.status !== 'approved' && r.status !== 'provisioning') return res.status(409).json({ error: 'RTH must be approved first' });
+  const item = r.items.find((i) => i.key === req.body.itemKey);
+  if (!item) return res.status(404).json({ error: 'item not found' });
+  const linked = r.candidateId ? db.get('candidates', r.candidateId) : null;
+  await graph.provisionAccess({ candidate: linked, item: { label: item.label, dept: item.dept } });
+  item.status = 'provisioned';
+  r.status = r.items.every((i) => i.status === 'provisioned') ? 'complete' : 'provisioning';
+  db.update('accessRequests', r.id, { items: r.items, status: r.status });
+  res.json(permView(db.get('accessRequests', r.id)));
+});
+provisionerApi.get('/provisioner/rth/:id/pdf', (req, res) => {
+  const file = join(PDF_DIR, `${req.params.id}-permissions.pdf`);
+  if (!existsSync(file)) return res.status(404).send('not found');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.send(readFileSync(file));
 });
