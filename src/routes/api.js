@@ -50,7 +50,8 @@ function candidateDetail(c) {
   });
   const r = db.find('accessRequests', (a) => a.candidateId === c.id);
   const rth = r ? { id: r.id, status: r.status, roleName: r.roleName } : null;
-  return { ...c, checklist, submissions: subs, rth };
+  const references = db.filter('references', (x) => x.candidateId === c.id);
+  return { ...c, checklist, submissions: subs, rth, references };
 }
 
 async function buildAndFilePdf({ definition, submission, candidate }) {
@@ -193,6 +194,71 @@ api.post('/candidates/:id/send-portal-link', async (req, res) => {
   db.update('candidates', c.id, { portalLinkSentAt: nowISO() });
   // In demo mode we return the link so it's usable without a real inbox.
   res.json({ ok: true, link: config.live ? undefined : url });
+});
+
+// --- References (admin) — add / resend / correct / replace ------------------
+// In live mode the reference receives the official Adobe reference form to sign;
+// Adobe's webhook marks it received (mirrors your Step 2A/2B/2C flows).
+const REFERENCE_FORM_URL = process.env.REFERENCE_FORM_URL || 'https://na4.documents.adobe.com/public/esignWidget?wid=REFERENCE_FORM';
+
+function logCandidate(candidateId, message, kind = 'reference') {
+  const c = db.get('candidates', candidateId);
+  if (!c) return;
+  const activity = c.activity || [];
+  activity.unshift({ at: nowISO(), kind, message });
+  db.update('candidates', candidateId, { activity });
+}
+
+async function sendReferenceRequest(ref) {
+  await notify.email({
+    to: ref.email, candidateId: ref.candidateId,
+    subject: `Reference request for an Optima candidate`,
+    html: `<p>Hello ${ref.name},</p><p>Please complete this professional reference:</p><p><a href="${REFERENCE_FORM_URL}">Complete the reference form</a></p>`,
+  });
+  logCandidate(ref.candidateId, `Reference request sent to ${ref.name} <${ref.email}>`);
+}
+
+api.post('/candidates/:id/references', async (req, res) => {
+  const c = db.get('candidates', req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const { name, email } = req.body;
+  if (!name || !email) return res.status(400).json({ error: 'name and email required' });
+  const ref = db.insert('references', { candidateId: c.id, name, email, status: 'requested', sentAt: nowISO() });
+  await sendReferenceRequest(ref);
+  res.status(201).json(ref);
+});
+
+api.post('/references/:id/resend', async (req, res) => {
+  const ref = db.get('references', req.params.id);
+  if (!ref) return res.status(404).json({ error: 'not found' });
+  db.update('references', ref.id, { sentAt: nowISO(), status: 'requested' });
+  await sendReferenceRequest(ref);
+  res.json(db.get('references', ref.id));
+});
+
+api.put('/references/:id', (req, res) => {
+  const ref = db.get('references', req.params.id);
+  if (!ref) return res.status(404).json({ error: 'not found' });
+  const { name, email } = req.body;
+  const updated = db.update('references', ref.id, { name: name ?? ref.name, email: email ?? ref.email });
+  logCandidate(ref.candidateId, `Reference corrected: ${updated.name} <${updated.email}>`);
+  res.json(updated);
+});
+
+api.post('/references/:id/received', (req, res) => {
+  const ref = db.get('references', req.params.id);
+  if (!ref) return res.status(404).json({ error: 'not found' });
+  const updated = db.update('references', ref.id, { status: 'received', receivedAt: nowISO() });
+  logCandidate(ref.candidateId, `Reference received from ${ref.name}`);
+  res.json(updated);
+});
+
+api.delete('/references/:id', (req, res) => {
+  const ref = db.get('references', req.params.id);
+  if (!ref) return res.status(404).json({ error: 'not found' });
+  db.remove('references', ref.id);
+  logCandidate(ref.candidateId, `Reference removed: ${ref.name}`);
+  res.json({ ok: true });
 });
 
 // --- Request to Hire --------------------------------------------------------

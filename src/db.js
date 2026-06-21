@@ -21,6 +21,7 @@ const EMPTY = {
   submissions: [],
   accessRoles: [],
   accessRequests: [],
+  references: [],
 };
 
 let cache = null;

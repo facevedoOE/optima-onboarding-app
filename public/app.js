@@ -192,6 +192,25 @@ views['/candidate/:id'] = async (id) => {
           <a class="btn ghost sm" href="#/rth/${c.rth.id}">Open</a></div></div>`
       : `<div class="row"><div><div class="t">Request to Hire</div><div class="d">No request yet for this candidate.</div></div>
           <button class="btn sm" id="newRth">Create Request to Hire</button></div>`}
+    <h2 style="margin-top:24px">References</h2>
+    ${(c.references || []).length
+      ? c.references.map((r) => `<div class="row">
+          <div><div class="t">${esc(r.name)}</div><div class="d">${esc(r.email)}${r.sentAt ? ` · sent ${new Date(r.sentAt).toLocaleDateString('en-US')}` : ''}</div></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="pill ${r.status === 'received' ? 'complete' : 'requested'}">${r.status === 'received' ? 'Received' : 'Requested'}</span>
+            <button class="btn ghost sm" data-ref-resend="${r.id}">Resend</button>
+            <button class="btn ghost sm" data-ref-edit="${r.id}" data-name="${esc(r.name)}" data-email="${esc(r.email)}">Correct</button>
+            ${r.status !== 'received' ? `<button class="btn ghost sm" data-ref-recv="${r.id}">Mark received</button>` : ''}
+            <button class="btn ghost sm" data-ref-del="${r.id}">Remove</button>
+          </div></div>`).join('')
+      : `<div class="row"><div class="d">No references requested yet.</div></div>`}
+    <div class="card" style="margin-top:6px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:150px"><label class="help" style="display:block;margin-bottom:4px">Reference name</label><input id="refName"></div>
+        <div style="flex:1;min-width:180px"><label class="help" style="display:block;margin-bottom:4px">Reference email</label><input id="refEmail" type="email"></div>
+        <button class="btn sm" id="refAdd">Add &amp; send request</button>
+      </div>
+    </div>
     <div class="grid g2" style="margin-top:24px">
       <div><h2>Activity</h2><div class="card"><ul class="activity">
         ${(c.activity || []).map((a) => `<li><span class="when">${new Date(a.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span><span>${esc(a.message)}</span></li>`).join('') || '<li>No activity yet.</li>'}
@@ -200,6 +219,37 @@ views['/candidate/:id'] = async (id) => {
   view.querySelectorAll('[data-fill]').forEach((b) => b.onclick = () => go(`/fill/${id}/${b.dataset.fill}`));
   const newRth = $('#newRth');
   if (newRth) newRth.onclick = () => go('/rth/new/' + id);
+
+  // References panel
+  let editingRef = null;
+  const refAdd = $('#refAdd');
+  refAdd.onclick = async () => {
+    const name = $('#refName').value.trim(), email = $('#refEmail').value.trim();
+    if (!name || !email) return toast('Name and email required');
+    try {
+      if (editingRef) await api('/references/' + editingRef, { method: 'PUT', body: { name, email } });
+      else await api('/candidates/' + id + '/references', { method: 'POST', body: { name, email } });
+      toast(editingRef ? 'Reference corrected' : 'Reference request sent');
+      views['/candidate/:id'](id);
+    } catch (err) { toast(err.message); }
+  };
+  view.querySelectorAll('[data-ref-edit]').forEach((b) => b.onclick = () => {
+    editingRef = b.dataset.refEdit;
+    $('#refName').value = b.dataset.name; $('#refEmail').value = b.dataset.email;
+    refAdd.textContent = 'Save correction'; $('#refName').focus();
+  });
+  view.querySelectorAll('[data-ref-resend]').forEach((b) => b.onclick = async () => {
+    try { await api('/references/' + b.dataset.refResend + '/resend', { method: 'POST' }); toast('Reference request resent'); views['/candidate/:id'](id); }
+    catch (err) { toast(err.message); }
+  });
+  view.querySelectorAll('[data-ref-recv]').forEach((b) => b.onclick = async () => {
+    try { await api('/references/' + b.dataset.refRecv + '/received', { method: 'POST' }); toast('Marked received'); views['/candidate/:id'](id); }
+    catch (err) { toast(err.message); }
+  });
+  view.querySelectorAll('[data-ref-del]').forEach((b) => b.onclick = async () => {
+    try { await api('/references/' + b.dataset.refDel, { method: 'DELETE' }); toast('Reference removed'); views['/candidate/:id'](id); }
+    catch (err) { toast(err.message); }
+  });
   $('#sendLink').onclick = async () => {
     try {
       const r = await api('/candidates/' + id + '/send-portal-link', { method: 'POST' });
