@@ -609,22 +609,30 @@ views['/rth/:id'] = async (id) => {
       <div><h2>Access provisioning</h2><div class="card">
         ${r.status === 'awaiting-signatures' ? '<div class="note">Provisioning unlocks once all signatures are complete.</div>' : ''}
         ${Object.entries(itemsByDept).map(([d, items]) => `<div class="dept-group"><h4>${esc(d)}</h4>
-          ${items.map((it) => `<div class="row" style="margin-bottom:6px">
-            <div class="t" style="font-size:.9rem">${esc(it.label)}${it.status === 'revoked' && it.revokedAt ? ` <span class="d">· revoked ${new Date(it.revokedAt).toLocaleDateString('en-US')}</span>` : ''}</div>
-            <div class="row-actions">
-              ${it.status === 'revoked' ? '<span class="pill revoked">Revoked</span>'
-                : it.status === 'provisioned' ? `<span class="pill provisioned">Provisioned</span><button class="btn ghost sm" data-revoke="${it.key}">Revoke</button>`
-                : `<button class="btn sm" data-prov="${it.key}" ${r.status === 'awaiting-signatures' ? 'disabled' : ''}>Provision</button>`}
-            </div></div>`).join('')}
+          ${items.map((it) => {
+            const hw = it.kind === 'hardware';
+            const sub = it.status === 'revoked' && it.revokedAt ? ` · revoked ${new Date(it.revokedAt).toLocaleDateString('en-US')}`
+              : it.status === 'return-requested' && it.returnRequestedAt ? ` · return requested ${new Date(it.returnRequestedAt).toLocaleDateString('en-US')}`
+              : it.status === 'returned' && it.returnedAt ? ` · received ${new Date(it.returnedAt).toLocaleDateString('en-US')}` : '';
+            let actions;
+            if (it.status === 'returned') actions = '<span class="pill provisioned">Returned</span>';
+            else if (it.status === 'return-requested') actions = `<span class="pill return-requested">Return requested</span><button class="btn ghost sm" data-received="${it.key}">Mark received</button>`;
+            else if (it.status === 'revoked') actions = '<span class="pill revoked">Revoked</span>';
+            else if (it.status === 'provisioned') actions = `<span class="pill provisioned">Provisioned</span><button class="btn ghost sm" data-revoke="${it.key}">${hw ? 'Request return' : 'Revoke'}</button>`;
+            else actions = `<button class="btn sm" data-prov="${it.key}" ${r.status === 'awaiting-signatures' ? 'disabled' : ''}>Provision</button>`;
+            return `<div class="row" style="margin-bottom:6px">
+              <div class="t" style="font-size:.9rem">${esc(it.label)}${sub ? ` <span class="d">${sub}</span>` : ''}</div>
+              <div class="row-actions">${actions}</div></div>`;
+          }).join('')}
         </div>`).join('') || '<div class="empty">No access items requested.</div>'}
       </div>
       ${r.status !== 'awaiting-signatures' ? `<div class="card" style="margin-top:12px">
         <h4 class="dept-group" style="margin:0 0 10px">Offboarding</h4>
         ${r.terminationDate
-          ? `<div class="note" style="margin:0">Terminated — all access revoked. Termination date: <strong>${esc(monthDay(r.terminationDate))}</strong>.</div>`
+          ? `<div class="note" style="margin:0">Terminated — software revoked, equipment return requested. Termination date: <strong>${esc(monthDay(r.terminationDate))}</strong>. Mark equipment received above as it comes back.</div>`
           : `<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
               <div style="flex:1;min-width:150px"><label class="help" style="display:block;margin-bottom:4px">Termination date</label><input type="date" id="termDate"></div>
-              <button class="btn ghost sm" id="revokeAll">Revoke all access</button></div>`}
+              <button class="btn ghost sm" id="revokeAll">Revoke access &amp; request equipment return</button></div>`}
       </div>` : ''}
       </div>
     </div>`;
@@ -638,7 +646,11 @@ views['/rth/:id'] = async (id) => {
     catch (err) { toast(err.message); }
   });
   view.querySelectorAll('[data-revoke]').forEach((b) => b.onclick = async () => {
-    try { await api('/rth/' + id + '/revoke', { method: 'POST', body: { itemKey: b.dataset.revoke } }); toast('Access revoked'); views['/rth/:id'](id); }
+    try { await api('/rth/' + id + '/revoke', { method: 'POST', body: { itemKey: b.dataset.revoke } }); toast('Done'); views['/rth/:id'](id); }
+    catch (err) { toast(err.message); }
+  });
+  view.querySelectorAll('[data-received]').forEach((b) => b.onclick = async () => {
+    try { await api('/rth/' + id + '/return-received', { method: 'POST', body: { itemKey: b.dataset.received } }); toast('Equipment received'); views['/rth/:id'](id); }
     catch (err) { toast(err.message); }
   });
   const revokeAll = $('#revokeAll');

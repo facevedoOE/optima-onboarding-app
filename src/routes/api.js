@@ -401,7 +401,7 @@ api.post('/rth', (req, res) => {
   const signatures = def.signatureChain.map((s) => ({ ...s, signedAt: null, signedBy: null }));
   const items = (accessItems || []).map((key) => {
     const item = def.accessCatalog.find((a) => a.key === key);
-    return { key, label: item?.label, dept: def.departments[item?.dept] || item?.dept, status: 'requested' };
+    return { key, label: item?.label, dept: def.departments[item?.dept] || item?.dept, kind: item?.kind || 'software', status: 'requested' };
   });
   res.status(201).json(db.insert('accessRequests', { candidateId: linked?.id || null, data: finalData, roleId, roleName: role?.name, signatures, items, status: 'awaiting-signatures' }));
 });
@@ -480,28 +480,55 @@ api.post('/rth/:id/provision', async (req, res) => {
   res.json(db.get('accessRequests', r.id));
 });
 
-// Offboarding — revoke a single access item.
+// Resolve software vs hardware for an item (old records may lack `kind`).
+function kindOf(item) {
+  if (item.kind) return item.kind;
+  const def = db.find('formDefinitions', (d) => d.isRTH);
+  return def?.accessCatalog?.find((a) => a.key === item.key)?.kind || 'software';
+}
+// Offboard a single item: software is revoked; equipment is return-requested.
+async function offboardItem(linked, item) {
+  if (kindOf(item) === 'hardware') {
+    item.status = 'return-requested'; item.returnRequestedAt = nowISO();
+    logCandidate(linked?.id, `Equipment return requested: ${item.label}`, 'revoke');
+  } else {
+    await graph.revokeAccess({ candidate: linked, item: { label: item.label, dept: item.dept } }).catch(() => {});
+    item.status = 'revoked'; item.revokedAt = nowISO();
+  }
+}
+
+// Offboarding — revoke a single access item (or request equipment return).
 api.post('/rth/:id/revoke', async (req, res) => {
   const r = db.get('accessRequests', req.params.id);
   if (!r) return res.status(404).json({ error: 'not found' });
   const item = r.items.find((i) => i.key === req.body.itemKey);
   if (!item) return res.status(404).json({ error: 'item not found' });
   const linked = r.candidateId ? db.get('candidates', r.candidateId) : null;
-  await graph.revokeAccess({ candidate: linked, item: { label: item.label, dept: item.dept } }).catch(() => {});
-  item.status = 'revoked'; item.revokedAt = nowISO();
+  await offboardItem(linked, item);
   db.update('accessRequests', r.id, { items: r.items });
   res.json(db.get('accessRequests', r.id));
 });
 
-// Offboarding — set a termination date and revoke all remaining access.
+// Offboarding — mark returned equipment as received.
+api.post('/rth/:id/return-received', (req, res) => {
+  const r = db.get('accessRequests', req.params.id);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  const item = r.items.find((i) => i.key === req.body.itemKey);
+  if (!item) return res.status(404).json({ error: 'item not found' });
+  item.status = 'returned'; item.returnedAt = nowISO();
+  if (r.candidateId) logCandidate(r.candidateId, `Equipment received back: ${item.label}`, 'revoke');
+  db.update('accessRequests', r.id, { items: r.items });
+  res.json(db.get('accessRequests', r.id));
+});
+
+// Offboarding — set a termination date, revoke software + request equipment return.
 api.post('/rth/:id/terminate', async (req, res) => {
   const r = db.get('accessRequests', req.params.id);
   if (!r) return res.status(404).json({ error: 'not found' });
   const linked = r.candidateId ? db.get('candidates', r.candidateId) : null;
   for (const item of r.items) {
-    if (item.status === 'revoked') continue;
-    await graph.revokeAccess({ candidate: linked, item: { label: item.label, dept: item.dept } }).catch(() => {});
-    item.status = 'revoked'; item.revokedAt = nowISO();
+    if (['revoked', 'return-requested', 'returned'].includes(item.status)) continue;
+    await offboardItem(linked, item);
   }
   r.terminationDate = req.body.terminationDate || nowISO().slice(0, 10);
   r.status = 'terminated';
