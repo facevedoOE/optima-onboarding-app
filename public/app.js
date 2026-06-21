@@ -575,7 +575,6 @@ views['/portal'] = async () => {
   const pct = p.checklist.length ? Math.round((done / p.checklist.length) * 100) : 0;
   view.innerHTML = `
     <div class="portal-hero">
-      <img class="portal-hero-logo" src="/assets/optima-logo.png" alt="Optima">
       <h1>Welcome to Team Optima</h1>
       <p class="hero-sub">Hi ${esc(p.firstName)} — here's everything for your start${p.startDate ? ` on ${esc(monthDay(p.startDate))}` : ''}.</p>
       <div class="ceo-card">

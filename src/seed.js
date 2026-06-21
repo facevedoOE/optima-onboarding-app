@@ -79,7 +79,6 @@ const formDefinitions = [
     version: 5,
     group: 'oao-charter',
     badge: 'OAO Full-Time Employees Only',
-    formType: 'County Form (PDF)',
     // Embed the actual county PDF document (no Adobe Sign version exists).
     type: 'embed',
     embedUrl: '/templates/ccps-fulltime.pdf',
