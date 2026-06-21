@@ -5,9 +5,10 @@
   "type": "module",
   "description": "Optima HR onboarding web app — schema-driven forms, candidate-centric data, role-based access provisioning",
   "scripts": {
-    "start": "node --env-file-if-exists=.env server.js",
-    "seed": "node --env-file-if-exists=.env src/seed.js"
+    "start": "node server.js",
+    "seed": "node src/seed.js"
   },
+  "engines": { "node": ">=18" },
   "dependencies": {
     "@azure/msal-node": "^5.2.5",
     "express": "^4.21.2",

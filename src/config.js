@@ -11,6 +11,19 @@
 //
 // Nothing else in the app branches on environment — it asks config.live.
 // ---------------------------------------------------------------------------
+import { readFileSync, existsSync } from 'node:fs';
+
+// Load .env if present — dependency-free, works on any modern Node (no CLI flag
+// needed, so `npm start` runs on Node 18+). Real env vars always win.
+try {
+  if (existsSync('.env')) {
+    for (const line of readFileSync('.env', 'utf8').split('\n')) {
+      const m = line.match(/^\s*([\w.-]+)\s*=\s*(.*?)\s*$/);
+      if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  }
+} catch (e) { /* no .env — demo mode */ }
+
 const env = process.env;
 
 export const config = {
