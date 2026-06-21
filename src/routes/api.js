@@ -218,7 +218,7 @@ api.post('/candidates/:id/send-portal-link', async (req, res) => {
 // --- References (admin) — add / resend / correct / replace ------------------
 // In live mode the reference receives the official Adobe reference form to sign;
 // Adobe's webhook marks it received (mirrors your Step 2A/2B/2C flows).
-const REFERENCE_FORM_URL = process.env.REFERENCE_FORM_URL || 'https://na4.documents.adobe.com/public/esignWidget?wid=REFERENCE_FORM';
+const REFERENCE_FORM_URL = process.env.REFERENCE_FORM_URL || 'https://na4.documents.adobe.com/public/esignWidget?wid=CBFCIBAA3AAABLblqZhDpQoRF7MxnMAybLMc-AQOSRttO83kQgrLnNGxhbcCSW5IcP-HX6jpYg-hnJiuotzU*';
 
 function logCandidate(candidateId, message, kind = 'reference') {
   const c = db.get('candidates', candidateId);
