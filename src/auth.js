@@ -13,11 +13,14 @@
 import session from 'express-session';
 import FileStoreFactory from 'session-file-store';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ConfidentialClientApplication } from '@azure/msal-node';
 import { config } from './config.js';
 import { db } from './db.js';
 
 const FileStore = FileStoreFactory(session);
+const SESSIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'sessions');
 
 const APPROVER_ROLES = ['HR', 'Finance', 'CEO'];
 
@@ -59,7 +62,7 @@ export function setupAuth(app) {
     // drops every session on restart and leaks memory). On Azure's ephemeral
     // filesystem this still resets on redeploy — a SQL/Redis store is the next
     // step for multi-instance scale, but this is correct for a single instance.
-    store: new FileStore({ path: './data/sessions', retries: 1, logFn: () => {} }),
+    store: new FileStore({ path: SESSIONS_DIR, retries: 1, logFn: () => {} }),
     secret: config.sessionSecret,
     resave: false,
     saveUninitialized: false,

@@ -125,5 +125,39 @@ org-specific thing left to wire (each access item takes a `groupId` and/or `skuI
 The data layer (`src/db.js`) is the other swap point: reimplement the same handful
 of functions against SQL or Dataverse and nothing else in the app changes.
 
-> Still a prototype. Production hardening (the group/license mapping, secret storage
-> in Key Vault, HTTPS, CSRF on the dev-login, error retries) is the remaining work.
+## Deploying to Azure App Service
+
+This runs as a standard Linux/Node App Service (Oryx auto-detects Node and runs
+`npm start`; confirm the plan is **Linux, Node 18+**, not Windows/iisnode).
+
+Set configuration as **App Settings** (environment variables) — do **not** ship a
+`.env` file: `TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET`, `SESSION_SECRET` (long
+random), `APP_BASE_URL` (your real `https://…` URL), `REFERENCE_WEBHOOK_SECRET`,
+`SP_SITE_ID`, plus the Entra redirect URI `{APP_BASE_URL}/auth/callback`. In live
+mode the app **refuses to start** on a default `SESSION_SECRET` or a localhost
+`APP_BASE_URL`, so these are enforced, not optional.
+
+> **Run it as a single instance.** ⚠️ All durable state is on the App Service
+> local disk: the JSON store (`data/store.json`), file-backed sessions
+> (`data/sessions`), uploaded documents (`data/uploads`), and generated PDFs
+> (`data/pdfs`). That disk is **wiped on every redeploy/restart** and is **not
+> shared across scaled-out instances**. Consequences to accept (or fix) before
+> real use:
+> - A redeploy/restart loses candidate records, sessions (everyone re-logs-in),
+>   uploaded files, and generated PDFs. (Completed PDFs are also mirrored to
+>   SharePoint via the integrations adapter, so SharePoint is the real system of
+>   record for filed documents.)
+> - Scaling beyond one instance would diverge the JSON store and fire the daily
+>   reference-reminder scheduler **once per instance** (duplicate emails). Keep
+>   `WEBSITE_INSTANCES=1` until the production datastore is in.
+>
+> **Production path** (each is an isolated swap point already): candidate/RTH data
+> → Azure SQL or Dataverse (reimplement `src/db.js`); sessions → Redis
+> (`connect-redis`); the reminder scheduler → an external timer (Azure Function /
+> WebJob, or cron hitting `POST /api/references/run-reminders`) with a single
+> owner instead of in-process `setInterval`.
+
+> Still a prototype. Remaining production work: the durability swaps above, the
+> group/license mapping for provisioning, secret storage in Key Vault, replacing
+> the placeholder I-9 Bookings link + handbook/AI/IT policy documents, and the
+> IT-policy two-party "send to candidate" flow.

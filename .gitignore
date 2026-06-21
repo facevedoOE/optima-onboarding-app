@@ -1,2 +1,7 @@
 node_modules/
 data/
+
+# Never commit real secrets — only the template (.env.example) is tracked.
+.env
+.env.*
+!.env.example

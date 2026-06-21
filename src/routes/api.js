@@ -26,35 +26,52 @@ if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // Save base64 file-field uploads to disk + the candidate's HR folder; replace
 // the field value with a readable list of filenames (so it's stored/shown cleanly).
-const MAX_FILE_BYTES = 15 * 1024 * 1024;   // 15 MB per file
-const MAX_FILES_PER_FIELD = 10;            // hard ceiling regardless of field config
+const MAX_FILE_BYTES = 15 * 1024 * 1024;        // 15 MB per file
+const MAX_FILES_PER_FIELD = 10;                 // hard ceiling regardless of field config
+const MAX_TOTAL_UPLOAD_BYTES = 40 * 1024 * 1024; // 40 MB per submission across all fields
 const ALLOWED_UPLOAD_EXT = new Set(['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'doc', 'docx', 'txt', 'heic']);
 
 async function processUploads(def, data, candidate, submissionId) {
+  // Validate EVERY file first (size, type, total) before writing anything, so a
+  // bad file late in the batch can't leave half-written files on disk.
+  const planned = []; // { key, names:[], writes:[{safe, bytes, name}] }
+  let totalBytes = 0;
   for (const f of def.fields) {
     if (f.type !== 'file' || !Array.isArray(data[f.key])) continue;
-    const names = [];
-    const dir = join(UPLOAD_DIR, submissionId);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     const limit = Math.min(f.maxFiles || MAX_FILES_PER_FIELD, MAX_FILES_PER_FIELD);
-    const files = data[f.key].slice(0, limit);
-    for (const file of files) {
+    const writes = [];
+    for (const file of data[f.key].slice(0, limit)) {
       const b64 = String(file.data || '').split(',').pop();
       const bytes = Buffer.from(b64, 'base64');
       if (!bytes.length) continue;
       if (bytes.length > MAX_FILE_BYTES) {
-        throw Object.assign(new Error(`"${file.name || 'file'}" exceeds the ${MAX_FILE_BYTES / 1024 / 1024}MB upload limit.`), { status: 413 });
+        throw Object.assign(new Error(`"${file.name || 'file'}" exceeds the ${MAX_FILE_BYTES / 1024 / 1024}MB per-file limit.`), { status: 413 });
+      }
+      totalBytes += bytes.length;
+      if (totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
+        throw Object.assign(new Error(`Total upload size exceeds the ${MAX_TOTAL_UPLOAD_BYTES / 1024 / 1024}MB limit.`), { status: 413 });
       }
       const safe = String(file.name || 'upload').replace(/[^\w.\-]+/g, '_');
       const ext = safe.includes('.') ? safe.split('.').pop().toLowerCase() : '';
       if (!ALLOWED_UPLOAD_EXT.has(ext)) {
         throw Object.assign(new Error(`"${file.name || 'file'}" is not an allowed file type.`), { status: 415 });
       }
-      writeFileSync(join(dir, safe), bytes);
-      await sharepoint.fileDocument({ candidate, fileName: safe, bytes }).catch(() => {});
-      names.push(file.name);
+      writes.push({ safe, bytes, name: file.name });
     }
-    data[f.key] = names.join(', ');
+    planned.push({ key: f.key, writes });
+  }
+
+  // All valid — now write.
+  const dir = join(UPLOAD_DIR, submissionId);
+  for (const p of planned) {
+    const names = [];
+    for (const w of p.writes) {
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, w.safe), w.bytes);
+      await sharepoint.fileDocument({ candidate, fileName: w.safe, bytes: w.bytes }).catch(() => {});
+      names.push(w.name);
+    }
+    data[p.key] = names.join(', ');
   }
 }
 
@@ -131,6 +148,15 @@ portalApi.get('/portal', (req, res) => {
 portalApi.get('/forms/:key', (req, res) => {
   const f = db.find('formDefinitions', (d) => d.key === req.params.key);
   if (!f) return res.status(404).json({ error: 'not found' });
+  // Candidates may only read forms assigned to them — never internal-only
+  // definitions like Request to Hire (which exposes the access catalog,
+  // approver chain, and role bundles).
+  if (req.session.user?.role === 'candidate') {
+    const cand = db.get('candidates', req.session.user.candidateId);
+    if (f.internalOnly || f.appliesTo === 'internal' || !cand || !appliesToCandidate(f, cand)) {
+      return res.status(403).json({ error: 'This form is not assigned to you' });
+    }
+  }
   res.json(f);
 });
 
@@ -159,7 +185,11 @@ portalApi.post('/submissions', async (req, res) => {
     db.remove('submissions', submission.id);
     return res.status(e.status || 400).json({ error: e.message || 'Upload failed' });
   }
-  db.update('submissions', submission.id, { data });
+  // Store ONLY the form's declared field keys — drops arbitrary/unknown keys and
+  // any prototype-pollution attempt (__proto__, constructor) from the raw body.
+  const clean = {};
+  for (const f of def.fields) if (data?.[f.key] !== undefined) clean[f.key] = data[f.key];
+  db.update('submissions', submission.id, { data: clean });
 
   let fileName, filedPath;
   if (def.type === 'embed' || def.embedUrl || def.type === 'link' || def.linkUrl) {
@@ -390,10 +420,13 @@ webhookRouter.post('/reference-completed', (req, res) => {
       return res.status(401).json({ error: 'invalid webhook secret' });
     }
   }
+  // Match on EMAIL only — a human name alone is too guessable to flip a
+  // reference to "received" (an attacker who knows a name shouldn't be able to
+  // satisfy a background check). Adobe always returns the signer's email.
   const email = String(req.body?.referenceEmail || '').trim().toLowerCase();
-  const name = String(req.body?.referenceName || '').trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: 'referenceEmail required' });
   const ref = db.find('references', (r) => r.status !== 'received'
-    && ((email && (r.email || '').toLowerCase() === email) || (name && (r.name || '').toLowerCase() === name)));
+    && (r.email || '').toLowerCase() === email);
   if (!ref) return res.status(404).json({ error: 'no matching pending reference' });
   db.update('references', ref.id, { status: 'received', receivedAt: nowISO() });
   logCandidate(ref.candidateId, `Reference received from ${ref.name} (auto)`);
@@ -458,11 +491,14 @@ api.get('/rth/:id', (req, res) => {
 api.post('/rth', (req, res) => {
   const { data, roleId, accessItems, candidateId } = req.body;
   const def = db.find('formDefinitions', (d) => d.isRTH);
-  const missing = def.fields.filter((f) => f.required && !data?.[f.key]).map((f) => f.label);
+  const isEmpty = (v) => v == null || (Array.isArray(v) ? v.length === 0 : String(v).trim() === '');
+  const missing = def.fields.filter((f) => f.required && isEmpty(data?.[f.key])).map((f) => f.label);
   if (missing.length) return res.status(400).json({ error: 'Missing required fields', missing });
   // Link to a candidate record by stable ID — the thread that connects the lifecycle.
   const linked = candidateId ? db.get('candidates', candidateId) : null;
-  const finalData = { ...data };
+  // Store only the form's declared field keys (drops arbitrary/__proto__ keys).
+  const finalData = {};
+  for (const f of def.fields) if (data?.[f.key] !== undefined) finalData[f.key] = data[f.key];
   if (linked) finalData.candidateName = `${linked.firstName} ${linked.lastName}`;
   const role = db.get('accessRoles', roleId);
   const signatures = def.signatureChain.map((s) => ({ ...s, signedAt: null, signedBy: null }));
@@ -485,6 +521,15 @@ api.post('/rth/:id/sign', async (req, res) => {
   const idx = r.signatures.findIndex((s) => s.key === stepKey);
   if (idx === -1) return res.status(404).json({ error: 'unknown step' });
   const step = r.signatures[idx];
+
+  // Terminal-state guard: once the chain is fully signed, the only reason to be
+  // here is to retry a finalize that previously failed (signatures complete but
+  // status never advanced past awaiting-signatures). Re-signing an already
+  // approved/provisioning/complete/terminated request would re-run account
+  // creation and regress its status — reject it.
+  if (r.signatures.every((s) => s.signedAt) && r.status !== 'awaiting-signatures') {
+    return res.status(409).json({ error: 'This request is already finalized.' });
+  }
 
   // Approver designation: the admin must hold the step's approver role.
   // (live: from Entra groups; demo: the admin holds all three.)
