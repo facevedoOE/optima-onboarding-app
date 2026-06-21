@@ -95,18 +95,15 @@ const formDefinitions = [
   {
     id: 'ccps-contractor',
     key: 'ccps-contractor',
-    title: 'CCPS — Charter School Contractor',
-    description: 'Charter school new contractor / part-time form.',
+    title: 'CCPS — Charter School Contractor (Part-Time)',
+    description: 'Official Collier County charter contractor form — complete it exactly as-is on the embedded Adobe document below.',
     appliesTo: 'oao-contractor',
-    version: 2,
-    fields: [
-      { key: 'charterSchool', label: 'Charter School Name', type: 'select', required: true,
-        options: ['9040 - Optima Classical Academy (OCA)'] },
-      { key: 'legalName', label: 'Legal Full Name', type: 'text', required: true },
-      { key: 'company', label: 'Company / DBA (if applicable)', type: 'text' },
-      { key: 'serviceDescription', label: 'Description of Services', type: 'textarea', required: true },
-      { key: 'attest', label: 'I certify the information above is accurate.', type: 'attestation', required: true },
-    ],
+    version: 3,
+    // EMBED form: rendered as the real Adobe Sign document in an iframe (not rebuilt as fields),
+    // because it must be completed exactly as-is. Adobe's webhook → your existing flow files the signed PDF.
+    type: 'embed',
+    embedUrl: 'https://na4.documents.adobe.com/public/esignWidget?wid=CBFCIBAA3AAABLblqZhDOLvmoMkWYhuOIEpwucoxOHgt0XhsdtJaHKfqt7XqLja9Rjyiy1EVJsZKFS84P5v8*',
+    fields: [],
   },
   {
     id: 'teacher-cert',
@@ -214,18 +211,20 @@ const accessCatalog = [
   { key: 'genius', label: 'Genius', dept: 'ACA', kind: 'software' },
   { key: 'arthur', label: 'Arthur', dept: 'ACA', kind: 'software' },
   { key: 'jstor', label: 'JSTOR', dept: 'ACA', kind: 'software' },
+  { key: 'optimaxr', label: 'OptimaXR', dept: 'ACA', kind: 'software' },
   // Hardware
   { key: 'laptop', label: 'Laptop', dept: 'IT', kind: 'hardware' },
   { key: 'monitor', label: 'Monitor', dept: 'IT', kind: 'hardware' },
   { key: 'mouse', label: 'Mouse', dept: 'IT', kind: 'hardware' },
   { key: 'pen', label: 'Logitech Pen', dept: 'IT', kind: 'hardware' },
   { key: 'vr', label: 'VR Headset', dept: 'ACA', kind: 'hardware' },
+  { key: 'doccam', label: 'Doc Cam', dept: 'ACA', kind: 'hardware' },
 ];
 
 const accessRoles = [
   {
     id: 'role-teacher', name: 'OAO Teacher',
-    defaults: ['microsoft', 'google', 'canvas', 'nearpod', 'formative', 'iready', 'focus', 'terms', 'wiris', 'genius', 'laptop', 'monitor', 'mouse', 'pen', 'vr'],
+    defaults: ['microsoft', 'google', 'canvas', 'nearpod', 'formative', 'iready', 'focus', 'terms', 'wiris', 'genius', 'optimaxr', 'laptop', 'monitor', 'mouse', 'pen', 'vr', 'doccam'],
   },
   {
     id: 'role-marketing', name: 'Marketing',
@@ -261,6 +260,12 @@ const demoCandidates = [
     id: 'cand-demo-2', firstName: 'Priya', lastName: 'Anand',
     email: 'priya.anand@example.com', position: 'Marketing Coordinator',
     startDate: '2026-07-01', employeeType: 'OptimaEd (Corporate)',
+    status: 'In Progress',
+  },
+  {
+    id: 'cand-demo-3', firstName: 'Marcus', lastName: 'Bell',
+    email: 'marcus.bell@example.com', position: 'Contract Tutor',
+    startDate: '2026-09-02', employeeType: 'Optima Academy Online — Contractor',
     status: 'In Progress',
   },
 ];

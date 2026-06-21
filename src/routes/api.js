@@ -100,7 +100,20 @@ portalApi.post('/submissions', async (req, res) => {
   if (missing.length) return res.status(400).json({ error: 'Missing required fields', missing });
 
   const submission = db.insert('submissions', { candidateId, formKey, data, status: 'complete', submittedAt: nowISO() });
-  const { fileName, filedPath } = await buildAndFilePdf({ definition: def, submission, candidate });
+
+  let fileName, filedPath;
+  if (def.type === 'embed' || def.embedUrl) {
+    // Completed on the real external document (Adobe Sign). The app records
+    // completion; the signed PDF is filed by Adobe's webhook → your existing flow.
+    filedPath = 'Completed on the official document (Adobe Sign → filed via webhook)';
+    if (candidate) {
+      const activity = candidate.activity || [];
+      activity.unshift({ at: nowISO(), kind: 'external', message: `Completed “${def.title}” on the official Adobe document` });
+      db.update('candidates', candidate.id, { activity });
+    }
+  } else {
+    ({ fileName, filedPath } = await buildAndFilePdf({ definition: def, submission, candidate }));
+  }
   db.update('submissions', submission.id, { fileName, filedPath });
   res.status(201).json({ ...submission, fileName, filedPath });
 });

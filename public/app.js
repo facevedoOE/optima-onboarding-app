@@ -212,8 +212,24 @@ views['/candidate/:id'] = async (id) => {
   };
 };
 
+// Embedded external form (e.g. Adobe Sign) — the real document, completed exactly as-is, in an iframe.
+function embedFormHTML(def) {
+  return `<div class="note">Complete and sign the official document below — it's the real form, submitted exactly as required. Your signed copy is filed automatically once you finish, then mark it complete.</div>
+    <iframe src="${esc(def.embedUrl)}" title="${esc(def.title)}" style="width:100%;height:78vh;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
+    <div style="margin-top:14px"><button class="btn green" id="embedDone">I've completed this form</button></div>`;
+}
+
 views['/fill/:cid/:key'] = async (cid, key) => {
   const [def, cand] = await Promise.all([api('/forms/' + key), api('/candidates/' + cid)]);
+  if (def.embedUrl) {
+    view.innerHTML = `<div class="crumb"><a href="#/">Candidates</a> › <a href="#/candidate/${cid}">${esc(cand.firstName)} ${esc(cand.lastName)}</a> › ${esc(def.title)}</div>
+      <h1>${esc(def.title)}</h1><p class="sub">${esc(def.description || '')}</p>${embedFormHTML(def)}`;
+    $('#embedDone').onclick = async () => {
+      try { await api('/submissions', { method: 'POST', body: { candidateId: cid, formKey: key, data: {} } }); toast('Marked complete'); go('/candidate/' + cid); }
+      catch (err) { toast(err.message); }
+    };
+    return;
+  }
   view.innerHTML = `
     <div class="crumb"><a href="#/">Candidates</a> › <a href="#/candidate/${cid}">${esc(cand.firstName)} ${esc(cand.lastName)}</a> › ${esc(def.title)}</div>
     <h1>${esc(def.title)}</h1><p class="sub">${esc(def.description || '')}</p>
@@ -466,6 +482,15 @@ views['/portal'] = async () => {
 
 views['/myform/:key'] = async (key) => {
   const def = await api('/forms/' + key);
+  if (def.embedUrl) {
+    view.innerHTML = `<div class="crumb"><a href="#/portal">My Portal</a> › ${esc(def.title)}</div>
+      <h1>${esc(def.title)}</h1><p class="sub">${esc(def.description || '')}</p>${embedFormHTML(def)}`;
+    $('#embedDone').onclick = async () => {
+      try { await api('/submissions', { method: 'POST', body: { formKey: key, data: {} } }); toast('Marked complete'); go('/portal'); }
+      catch (err) { toast(err.message); }
+    };
+    return;
+  }
   view.innerHTML = `
     <div class="crumb"><a href="#/portal">My Portal</a> › ${esc(def.title)}</div>
     <h1>${esc(def.title)}</h1><p class="sub">${esc(def.description || '')}</p>
