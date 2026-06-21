@@ -38,7 +38,7 @@ function renderUserChip() {
       chip.style.cssText = 'margin-left:auto;display:flex;align-items:center;gap:12px;color:#cdd6e6;font-size:.85rem';
       document.querySelector('.topbar').appendChild(chip);
     }
-    chip.innerHTML = `<span>${esc(ME.name)} · <strong style="color:#fff">${esc(ME.role)}</strong></span><a href="/auth/logout" style="color:#fff;font-weight:600">Sign out</a>`;
+    chip.innerHTML = `<span class="uc-name">${esc(ME.name)}</span><span class="uc-role"> · <strong style="color:#fff">${esc(ME.role)}</strong></span><a href="/auth/logout" style="color:#fff;font-weight:600">Sign out</a>`;
   } else if (chip) { chip.remove(); }
 }
 
@@ -48,7 +48,7 @@ async function renderLoginUI(me) {
   // Candidate arrived via their magic link — confirm the email HR has on file.
   if (me.pendingCandidate) {
     view.innerHTML = `<div class="card" style="max-width:440px;margin:48px auto">
-      <div style="color:var(--blue);font-weight:800;font-size:1.3rem;text-align:center;margin-bottom:6px">OPTIMA · Onboarding</div>
+      <div class="brandmark" style="font-size:1.3rem;text-align:center;margin-bottom:6px">OPTIMA · Onboarding</div>
       <p class="sub" style="text-align:center;margin-bottom:6px">Confirm it's you</p>
       <p class="help" style="text-align:center;margin-bottom:18px">Please enter the email address you used to apply. For your security, only that email will open your portal.</p>
       <form id="cv">
@@ -548,7 +548,7 @@ views['/portal'] = async () => {
         </div>
       </div>`).join('')}
     <h2>Resources</h2>
-    <div class="grid g3">${w.resources.map((r) => `<div class="card"><div class="cand-name" style="font-size:1rem">${esc(r.title)}</div><div class="cand-meta" style="margin:0">${esc(r.desc)}</div></div>`).join('')}</div>`;
+    <div class="grid g3">${w.resources.map((r) => `<div class="card resource-card"><div class="cand-name" style="font-size:1rem">${esc(r.title)}</div><div class="cand-meta" style="margin:0">${esc(r.desc)}</div></div>`).join('')}</div>`;
   view.querySelectorAll('[data-fill]').forEach((b) => b.onclick = () => go('/myform/' + b.dataset.fill));
 };
 
