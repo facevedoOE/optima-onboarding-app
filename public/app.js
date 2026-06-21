@@ -141,6 +141,17 @@ function renderField(f, value = '', opts = {}) {
     case 'attestation':
       return `<div class="field"><div class="attest"><input type="checkbox" name="${f.key}" id="f_${f.key}" ${value ? 'checked' : ''} ${f.required ? 'required' : ''} ${ro}>
         <label for="f_${f.key}" style="margin:0">${esc(f.label)}${req}</label></div></div>`;
+    case 'multiselect': {
+      const sel = Array.isArray(value) ? value : [];
+      return `<div class="field"><label>${esc(f.label)}${req}</label><div class="check-grid">${(f.options || []).map((o) =>
+        `<label class="chk"><input type="checkbox" name="${f.key}" value="${esc(o)}" ${sel.includes(o) ? 'checked' : ''} ${ro}> ${esc(o)}</label>`).join('')}</div>${f.help ? `<div class="help">${esc(f.help)}</div>` : ''}</div>`;
+    }
+    case 'file': {
+      const limits = `Up to ${f.maxFiles || 1} file${(f.maxFiles || 1) > 1 ? 's' : ''}${f.accept ? ' · ' + f.accept : ''}`;
+      return `<div class="field"><label>${esc(f.label)}${req}</label>
+        <input type="file" name="${f.key}" ${(f.maxFiles || 1) > 1 ? 'multiple' : ''} ${f.accept ? `accept="${esc(f.accept)}"` : ''} ${f.required ? 'required' : ''} ${ro}>
+        <div class="help">${limits} — uploaded to your HR folder.</div></div>`;
+    }
     case 'signature':
       input = `<input type="text" name="${f.key}" value="${v}" placeholder="Type your full legal name" ${f.required ? 'required' : ''} ${ro} class="signature-input">`; break;
     case 'date': input = `<input type="date" name="${f.key}" value="${v}" ${f.required ? 'required' : ''} ${ro}>`; break;
@@ -155,6 +166,11 @@ function renderField(f, value = '', opts = {}) {
 function collectForm(formEl, fields) {
   const data = {};
   for (const f of fields) {
+    if (f.type === 'multiselect') {
+      data[f.key] = [...formEl.querySelectorAll(`input[name="${f.key}"]:checked`)].map((c) => c.value);
+      continue;
+    }
+    if (f.type === 'file') continue; // handled async by collectFiles
     const node = formEl.elements[f.key];
     if (!node) continue;
     data[f.key] = f.type === 'attestation' ? node.checked : node.value;
@@ -162,17 +178,36 @@ function collectForm(formEl, fields) {
   return data;
 }
 
+// Read file-field uploads as base64 so they can be POSTed and filed server-side.
+function readFileAsDataUrl(file) {
+  return new Promise((resolve) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.readAsDataURL(file); });
+}
+async function collectFiles(formEl, fields) {
+  const out = {};
+  for (const f of fields) {
+    if (f.type !== 'file') continue;
+    const node = formEl.elements[f.key];
+    const files = node && node.files ? [...node.files] : [];
+    if (!files.length) continue;
+    out[f.key] = await Promise.all(files.map(async (file) => ({ name: file.name, type: file.type, data: await readFileAsDataUrl(file) })));
+  }
+  return out;
+}
+
 // --- checklist rendering (grouping + badges + callouts) ---------------------
 const CHECKLIST_GROUPS = {
   'oao-charter': 'For Optima Academy Online employees — select “9040 - Optima Classical Academy (OCA)” when asked for “Charter School Name.” Complete the form that applies to your employment type.',
 };
 
-function checklistItemHtml(item) {
+function checklistItemHtml(item, admin) {
   const badges = [];
   if (item.badge) badges.push(`<span class="cl-badge cl-badge-gold">${esc(item.badge)}</span>`);
   if (item.formType) badges.push(`<span class="cl-badge">${esc(item.formType)}</span>`);
+  const doneLink = admin
+    ? `<a class="btn ghost sm" href="#/submission/${item.submissionId}">View answers</a>`
+    : `<a class="btn ghost sm" href="/api/submissions/${item.submissionId}/pdf" target="_blank">View PDF</a>`;
   const action = item.status === 'complete'
-    ? (item.submissionId ? `<a class="btn ghost sm" href="/api/submissions/${item.submissionId}/pdf" target="_blank">View PDF</a>` : '')
+    ? (item.submissionId ? doneLink : '')
     : `<button class="btn sm" data-fill="${item.key}">${item.type === 'link' ? 'Schedule' : 'Complete'}</button>`;
   return `<div class="row ${item.status === 'complete' ? 'done' : ''}">
     <div><div class="t">${esc(item.title)}</div>
@@ -183,15 +218,15 @@ function checklistItemHtml(item) {
     </div></div>`;
 }
 
-function checklistHtml(items) {
+function checklistHtml(items, admin) {
   let html = '', i = 0;
   while (i < items.length) {
     const g = items[i].group;
     if (g) {
       const grp = [];
       while (i < items.length && items[i].group === g) grp.push(items[i++]);
-      html += `<div class="cl-group">${CHECKLIST_GROUPS[g] ? `<div class="cl-callout">${esc(CHECKLIST_GROUPS[g])}</div>` : ''}${grp.map(checklistItemHtml).join('')}</div>`;
-    } else { html += checklistItemHtml(items[i++]); }
+      html += `<div class="cl-group">${CHECKLIST_GROUPS[g] ? `<div class="cl-callout">${esc(CHECKLIST_GROUPS[g])}</div>` : ''}${grp.map((x) => checklistItemHtml(x, admin)).join('')}</div>`;
+    } else { html += checklistItemHtml(items[i++], admin); }
   }
   return html;
 }
@@ -253,7 +288,7 @@ views['/candidate/:id'] = async (id) => {
       <button class="btn ghost" id="sendLink">${c.portalLinkSentAt ? 'Resend' : 'Send'} portal link</button>
     </div>
     <h2>Onboarding checklist</h2>
-    ${checklistHtml(c.checklist)}
+    ${checklistHtml(c.checklist, true)}
     <h2 style="margin-top:24px">Access &amp; Hiring</h2>
     ${c.rth
       ? `<div class="row"><div><div class="t">Request to Hire</div><div class="d">${esc(c.rth.roleName || 'Custom access')}</div></div>
@@ -383,7 +418,9 @@ views['/fill/:cid/:key'] = async (cid, key) => {
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     try {
-      await api('/submissions', { method: 'POST', body: { candidateId: cid, formKey: key, data: collectForm(e.target, def.fields) } });
+      const data = collectForm(e.target, def.fields);
+      Object.assign(data, await collectFiles(e.target, def.fields));
+      await api('/submissions', { method: 'POST', body: { candidateId: cid, formKey: key, data } });
       toast('Submitted'); go('/candidate/' + cid);
     } catch (err) { toast(err.message); }
   };
@@ -626,8 +663,12 @@ views['/myform/:key'] = async (key) => {
     <button class="btn green" type="submit">Submit</button></form></div>`;
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
-    try { await api('/submissions', { method: 'POST', body: { formKey: key, data: collectForm(e.target, def.fields) } }); toast('Submitted'); go('/portal'); }
-    catch (err) { toast(err.message); }
+    try {
+      const data = collectForm(e.target, def.fields);
+      Object.assign(data, await collectFiles(e.target, def.fields));
+      await api('/submissions', { method: 'POST', body: { formKey: key, data } });
+      toast('Submitted'); go('/portal');
+    } catch (err) { toast(err.message); }
   };
 };
 
@@ -668,10 +709,33 @@ views['/provision/:id'] = async (id) => {
   });
 };
 
+// --- Admin: view a submission's logged answers ------------------------------
+views['/submission/:id'] = async (id) => {
+  const s = await api('/submissions/' + id);
+  const rows = (s.fields || []).map((f) => {
+    let v = s.data?.[f.key];
+    if (f.type === 'attestation') v = v ? 'Acknowledged' : 'Not acknowledged';
+    if (Array.isArray(v)) v = v.join(', ');
+    if (v === undefined || v === null || v === '') v = '—';
+    return { label: f.label, value: String(v), file: f.type === 'file' };
+  });
+  view.innerHTML = `
+    <div class="crumb"><a href="#/">Candidates</a>${s.candidateId ? ` › <a href="#/candidate/${s.candidateId}">${esc(s.candidateName || '')}</a>` : ''} › ${esc(s.formTitle)}</div>
+    <div class="page-head"><div><h1>${esc(s.formTitle)}</h1>
+      <p class="sub">${esc(s.candidateName || '')}${s.submittedAt ? ` · submitted ${new Date(s.submittedAt).toLocaleString('en-US')}` : ''}</p></div>
+      <a class="btn ghost sm" href="/api/submissions/${id}/pdf" target="_blank">View PDF</a></div>
+    <div class="card" style="max-width:780px">
+      ${rows.map((r) => `<div style="display:flex;gap:14px;padding:9px 0;border-bottom:1px dashed var(--line)">
+        <div style="flex:0 0 240px;color:var(--muted);font-size:.85rem">${esc(r.label)}</div>
+        <div style="flex:1;${r.value === '—' ? 'color:var(--muted)' : 'font-weight:600'}">${esc(r.value)}${r.file && r.value !== '—' ? ' <span class="tag-soft">filed to HR folder</span>' : ''}</div></div>`).join('')}
+    </div>`;
+};
+
 // --- router -----------------------------------------------------------------
 const routes = [
   ['/', views['/']],
   ['/portal', views['/portal']],
+  ['/submission/:id', views['/submission/:id']],
   ['/provision', views['/provision']],
   ['/provision/:id', views['/provision/:id']],
   ['/myform/:key', views['/myform/:key']],

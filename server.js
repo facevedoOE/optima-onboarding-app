@@ -9,7 +9,7 @@ import { db } from './src/db.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '50mb' })); // allows base64 document uploads
 app.use(express.urlencoded({ extended: true }));
 
 // Auth (mounts /api/me, /auth/*) must come before protected routes.

@@ -10,8 +10,30 @@ import { sharepoint, graph, notify } from '../adapters/integrations.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PDF_DIR = join(__dirname, '..', '..', 'data', 'pdfs');
+const UPLOAD_DIR = join(__dirname, '..', '..', 'data', 'uploads');
 const TEMPLATES_DIR = join(__dirname, '..', '..', 'templates');
 if (!existsSync(PDF_DIR)) mkdirSync(PDF_DIR, { recursive: true });
+if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// Save base64 file-field uploads to disk + the candidate's HR folder; replace
+// the field value with a readable list of filenames (so it's stored/shown cleanly).
+async function processUploads(def, data, candidate, submissionId) {
+  for (const f of def.fields) {
+    if (f.type !== 'file' || !Array.isArray(data[f.key])) continue;
+    const names = [];
+    const dir = join(UPLOAD_DIR, submissionId);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    for (const file of data[f.key]) {
+      const b64 = String(file.data || '').split(',').pop();
+      const bytes = Buffer.from(b64, 'base64');
+      const safe = String(file.name || 'upload').replace(/[^\w.\-]+/g, '_');
+      writeFileSync(join(dir, safe), bytes);
+      await sharepoint.fileDocument({ candidate, fileName: safe, bytes }).catch(() => {});
+      names.push(file.name);
+    }
+    data[f.key] = names.join(', ');
+  }
+}
 
 // Welcome content for the candidate portal — the merged landing-page material.
 const WELCOME = {
@@ -105,7 +127,10 @@ portalApi.post('/submissions', async (req, res) => {
   const missing = def.fields.filter((f) => f.required && !data?.[f.key]).map((f) => f.label);
   if (missing.length) return res.status(400).json({ error: 'Missing required fields', missing });
 
-  const submission = db.insert('submissions', { candidateId, formKey, data, status: 'complete', submittedAt: nowISO() });
+  const submission = db.insert('submissions', { candidateId, formKey, data: {}, status: 'complete', submittedAt: nowISO() });
+  // Save uploaded documents to the HR folder, then store the cleaned answers.
+  await processUploads(def, data, candidate, submission.id);
+  db.update('submissions', submission.id, { data });
 
   let fileName, filedPath;
   if (def.type === 'embed' || def.embedUrl || def.type === 'link' || def.linkUrl) {
@@ -206,6 +231,15 @@ api.get('/candidates/:id', (req, res) => {
   const c = db.get('candidates', req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
   res.json(candidateDetail(c));
+});
+
+// Admin: read a submission's answers (logged on the admin side).
+api.get('/submissions/:id', (req, res) => {
+  const s = db.get('submissions', req.params.id);
+  if (!s) return res.status(404).json({ error: 'not found' });
+  const def = db.find('formDefinitions', (d) => d.key === s.formKey);
+  const cand = s.candidateId ? db.get('candidates', s.candidateId) : null;
+  res.json({ ...s, formTitle: def?.title || s.formKey, fields: def?.fields || [], candidateName: cand ? `${cand.firstName} ${cand.lastName}` : null });
 });
 
 // Send the candidate their magic-link portal invitation.
