@@ -7,6 +7,34 @@
 // ---------------------------------------------------------------------------
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
+// Fill an OFFICIAL fillable PDF (e.g. the county CCPS packet) with the candidate's
+// answers, so the output IS the real form. Each form field maps to one or more PDF
+// field names via `field.pdf`. Unknown/locked fields are skipped, never fatal.
+export async function fillPdfTemplate({ templateBytes, definition, data }) {
+  const pdf = await PDFDocument.load(templateBytes);
+  const form = pdf.getForm();
+  const setText = (n, v) => { try { form.getTextField(n).setText(String(v ?? '')); } catch (e) {} };
+  const setCheck = (n, v) => { try { const c = form.getCheckBox(n); v ? c.check() : c.uncheck(); } catch (e) {} };
+  const setChoice = (n, v) => { try { form.getDropdown(n).select(String(v)); } catch (e) { setText(n, v); } };
+
+  for (const f of definition.fields) {
+    const v = data?.[f.key];
+    if (v === undefined || v === '' || v === false) continue;
+    for (const n of (f.pdf || [])) {
+      if (f.type === 'checkbox') setCheck(n, !!v);
+      else if (f.type === 'select') setChoice(n, v);
+      else setText(n, v);
+    }
+  }
+  // Some PDFs repeat the applicant's full name across pages.
+  if (definition.fullNameFields && (data.firstName || data.lastName)) {
+    const full = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+    for (const n of definition.fullNameFields) setText(n, full);
+  }
+  try { form.updateFieldAppearances(); } catch (e) {}
+  return await pdf.save();
+}
+
 const BLUE = rgb(0.055, 0.11, 0.259); // #0E1C42
 const BIT = rgb(0.333, 0.784, 0.91); // #55C8E8
 const GREY = rgb(0.42, 0.45, 0.5);

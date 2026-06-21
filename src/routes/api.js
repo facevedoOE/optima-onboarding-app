@@ -5,11 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { db, nowISO } from '../db.js';
 import { config } from '../config.js';
 import { requireAdmin, candidatePortalUrl } from '../auth.js';
-import { generateSubmissionPdf } from '../pdf.js';
+import { generateSubmissionPdf, fillPdfTemplate } from '../pdf.js';
 import { sharepoint, graph, notify } from '../adapters/integrations.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PDF_DIR = join(__dirname, '..', '..', 'data', 'pdfs');
+const TEMPLATES_DIR = join(__dirname, '..', '..', 'templates');
 if (!existsSync(PDF_DIR)) mkdirSync(PDF_DIR, { recursive: true });
 
 // Welcome content for the candidate portal — the merged landing-page material.
@@ -112,6 +113,13 @@ portalApi.post('/submissions', async (req, res) => {
       activity.unshift({ at: nowISO(), kind: 'external', message: `Completed “${def.title}” on the official Adobe document` });
       db.update('candidates', candidate.id, { activity });
     }
+  } else if (def.pdfTemplate) {
+    // Fill the REAL county PDF with the candidate's answers, then file it.
+    const templateBytes = readFileSync(join(TEMPLATES_DIR, def.pdfTemplate));
+    const bytes = await fillPdfTemplate({ templateBytes, definition: def, data });
+    writeFileSync(join(PDF_DIR, `${submission.id}.pdf`), bytes);
+    fileName = `${def.key}_${candidate ? candidate.lastName + '_' + candidate.firstName : 'record'}_${submission.id.slice(0, 8)}.pdf`;
+    ({ path: filedPath } = await sharepoint.fileDocument({ candidate, fileName, bytes }));
   } else {
     ({ fileName, filedPath } = await buildAndFilePdf({ definition: def, submission, candidate }));
   }
