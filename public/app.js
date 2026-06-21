@@ -44,6 +44,27 @@ function renderUserChip() {
 
 async function renderLoginUI(me) {
   document.querySelector('#nav').style.display = 'none';
+
+  // Candidate arrived via their magic link — confirm the email HR has on file.
+  if (me.pendingCandidate) {
+    view.innerHTML = `<div class="card" style="max-width:440px;margin:48px auto">
+      <div style="color:var(--blue);font-weight:800;font-size:1.3rem;text-align:center;margin-bottom:6px">OPTIMA · Onboarding</div>
+      <p class="sub" style="text-align:center;margin-bottom:6px">Confirm it's you</p>
+      <p class="help" style="text-align:center;margin-bottom:18px">Please enter the email address you used to apply. For your security, only that email will open your portal.</p>
+      <form id="cv">
+        <div class="field"><input type="email" id="cvEmail" placeholder="you@example.com" required></div>
+        <button class="btn" style="width:100%" type="submit">Continue to my portal</button>
+        <div class="help" id="cvErr" style="color:var(--orange);margin-top:10px;min-height:1em"></div>
+      </form></div>`;
+    $('#cv').onsubmit = async (e) => {
+      e.preventDefault();
+      const r = await fetch('/auth/candidate/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: $('#cvEmail').value }) });
+      if (r.ok) { location.hash = '#/portal'; boot(); }
+      else { const d = await r.json().catch(() => ({})); $('#cvErr').textContent = d.error || 'Could not verify. Please try again.'; }
+    };
+    return;
+  }
+
   let adminBlock, candBlock;
   if (me.mode === 'live') {
     adminBlock = `<a class="btn" href="/auth/login">Sign in with Microsoft</a>`;
@@ -87,7 +108,8 @@ async function boot() {
 
 // --- schema-driven field renderer ------------------------------------------
 function renderField(f, value = '') {
-  const req = f.required ? ' <span class="req">*</span>' : '';
+  const req = f.required ? ' <span class="req">*</span>' : ' <span class="optional-tag">Optional</span>';
+  const oc = f.required ? '' : ' optional'; // grays out fields that aren't required
   const v = esc(value);
   let input = '';
   switch (f.type) {
@@ -97,7 +119,7 @@ function renderField(f, value = '') {
       input = `<select name="${f.key}" ${f.required ? 'required' : ''}><option value="">Select…</option>` +
         (f.options || []).map((o) => `<option ${value === o ? 'selected' : ''}>${esc(o)}</option>`).join('') + `</select>`; break;
     case 'attestation':
-      return `<div class="field"><div class="attest"><input type="checkbox" name="${f.key}" id="f_${f.key}" ${value ? 'checked' : ''} ${f.required ? 'required' : ''}>
+      return `<div class="field${oc}"><div class="attest"><input type="checkbox" name="${f.key}" id="f_${f.key}" ${value ? 'checked' : ''} ${f.required ? 'required' : ''}>
         <label for="f_${f.key}" style="margin:0">${esc(f.label)}${req}</label></div></div>`;
     case 'date': input = `<input type="date" name="${f.key}" value="${v}" ${f.required ? 'required' : ''}>`; break;
     case 'email': input = `<input type="email" name="${f.key}" value="${v}" ${f.required ? 'required' : ''}>`; break;
@@ -105,7 +127,7 @@ function renderField(f, value = '') {
     case 'number': input = `<input type="number" name="${f.key}" value="${v}" ${f.required ? 'required' : ''}>`; break;
     default: input = `<input type="text" name="${f.key}" value="${v}" placeholder="${esc(f.placeholder || '')}" ${f.required ? 'required' : ''}>`;
   }
-  return `<div class="field"><label>${esc(f.label)}${req}</label>${input}${f.help ? `<div class="help">${esc(f.help)}</div>` : ''}</div>`;
+  return `<div class="field${oc}"><label>${esc(f.label)}${req}</label>${input}${f.help ? `<div class="help">${esc(f.help)}</div>` : ''}</div>`;
 }
 
 function collectForm(formEl, fields) {

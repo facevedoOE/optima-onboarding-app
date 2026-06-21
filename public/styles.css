@@ -148,3 +148,9 @@ textarea{min-height:80px;resize:vertical}
   .portal-hero-logo{ position:static; display:block; margin-bottom:16px; }
   .ceo-header{ flex-direction:column; text-align:center; align-items:center; }
 }
+
+/* Optional (non-required) fields are de-emphasized so required fields stand out */
+.field.optional label{color:#9aa3b2}
+.field.optional input,.field.optional select,.field.optional textarea{background:#f6f7f9;border-color:#edf0f5;color:#6b7280}
+.field.optional input:focus,.field.optional select:focus,.field.optional textarea:focus{background:#fff;color:var(--ink);border-color:var(--bit)}
+.optional-tag{font-size:.62rem;font-weight:700;color:#9aa3b2;background:#f0f2f6;padding:1px 6px;border-radius:5px;margin-left:6px;text-transform:uppercase;letter-spacing:.05em;vertical-align:middle}

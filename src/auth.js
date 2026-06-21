@@ -59,16 +59,36 @@ export function setupAuth(app) {
   }));
 
   app.get('/api/me', (req, res) => {
-    res.json({ authenticated: Boolean(req.session.user), user: req.session.user || null, mode: config.live ? 'live' : 'demo' });
+    res.json({
+      authenticated: Boolean(req.session.user),
+      user: req.session.user || null,
+      mode: config.live ? 'live' : 'demo',
+      pendingCandidate: Boolean(req.session.pendingCandidateId),
+    });
   });
 
   // --- candidate sign-in via magic link (both modes) ------------------------
+  // Step 1: the link identifies the candidate, but does NOT sign them in yet.
   app.get('/auth/candidate', (req, res) => {
     const candidateId = verifyCandidateToken(req.query.token);
     const cand = candidateId && db.get('candidates', candidateId);
     if (!cand) return res.status(401).send('This onboarding link is invalid or has expired. Please contact HR.');
-    req.session.user = { role: 'candidate', candidateId: cand.id, name: `${cand.firstName} ${cand.lastName}`, email: cand.email };
+    req.session.pendingCandidateId = cand.id;
+    delete req.session.user; // force email confirmation on every link click
     res.redirect('/');
+  });
+
+  // Step 2: candidate must confirm the email HR entered for them. Only that email works.
+  app.post('/auth/candidate/verify', (req, res) => {
+    const cand = req.session.pendingCandidateId && db.get('candidates', req.session.pendingCandidateId);
+    if (!cand) return res.status(401).json({ error: 'Your sign-in link has expired. Please use the link HR emailed you.' });
+    const entered = String(req.body?.email || '').trim().toLowerCase();
+    if (!entered || entered !== String(cand.email || '').trim().toLowerCase()) {
+      return res.status(401).json({ error: 'That email doesn’t match our records. Please enter the email address you used to apply.' });
+    }
+    req.session.user = { role: 'candidate', candidateId: cand.id, name: `${cand.firstName} ${cand.lastName}`, email: cand.email };
+    delete req.session.pendingCandidateId;
+    res.json({ ok: true });
   });
 
   if (config.live) {
