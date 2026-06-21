@@ -61,5 +61,15 @@ export const GRAPH = 'https://graph.microsoft.com/v1.0';
 if (!config.live) {
   console.log('⚙️  Running in DEMO mode (no Entra credentials). See .env.example to go live.');
 } else {
+  // Fail fast: live mode must not run on default/missing secrets.
+  if (!env.SESSION_SECRET || env.SESSION_SECRET === 'dev-only-not-secret') {
+    throw new Error('SESSION_SECRET must be set to a strong, unique value in live mode.');
+  }
+  if (!env.APP_BASE_URL || env.APP_BASE_URL.startsWith('http://localhost')) {
+    throw new Error('APP_BASE_URL must be set to your real https URL in live mode.');
+  }
+  if (!env.REFERENCE_WEBHOOK_SECRET) {
+    console.warn('⚠️  REFERENCE_WEBHOOK_SECRET is not set — the reference webhook will reject all calls in live mode.');
+  }
   console.log('🔐 Running in LIVE mode — Entra sign-in and Graph calls are active.');
 }

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { writeFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,14 @@ import { config } from '../config.js';
 import { requireAdmin, requireProvisioner, candidatePortalUrl } from '../auth.js';
 import { generateSubmissionPdf, fillPdfTemplate, generatePermissionsPdf } from '../pdf.js';
 import { sharepoint, graph, notify } from '../adapters/integrations.js';
+
+// Constant-time string compare so secret checks don't leak length/content via timing.
+function safeEqual(a, b) {
+  const ab = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PDF_DIR = join(__dirname, '..', '..', 'data', 'pdfs');
@@ -17,16 +26,30 @@ if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // Save base64 file-field uploads to disk + the candidate's HR folder; replace
 // the field value with a readable list of filenames (so it's stored/shown cleanly).
+const MAX_FILE_BYTES = 15 * 1024 * 1024;   // 15 MB per file
+const MAX_FILES_PER_FIELD = 10;            // hard ceiling regardless of field config
+const ALLOWED_UPLOAD_EXT = new Set(['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'doc', 'docx', 'txt', 'heic']);
+
 async function processUploads(def, data, candidate, submissionId) {
   for (const f of def.fields) {
     if (f.type !== 'file' || !Array.isArray(data[f.key])) continue;
     const names = [];
     const dir = join(UPLOAD_DIR, submissionId);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    for (const file of data[f.key]) {
+    const limit = Math.min(f.maxFiles || MAX_FILES_PER_FIELD, MAX_FILES_PER_FIELD);
+    const files = data[f.key].slice(0, limit);
+    for (const file of files) {
       const b64 = String(file.data || '').split(',').pop();
       const bytes = Buffer.from(b64, 'base64');
+      if (!bytes.length) continue;
+      if (bytes.length > MAX_FILE_BYTES) {
+        throw Object.assign(new Error(`"${file.name || 'file'}" exceeds the ${MAX_FILE_BYTES / 1024 / 1024}MB upload limit.`), { status: 413 });
+      }
       const safe = String(file.name || 'upload').replace(/[^\w.\-]+/g, '_');
+      const ext = safe.includes('.') ? safe.split('.').pop().toLowerCase() : '';
+      if (!ALLOWED_UPLOAD_EXT.has(ext)) {
+        throw Object.assign(new Error(`"${file.name || 'file'}" is not an allowed file type.`), { status: 415 });
+      }
       writeFileSync(join(dir, safe), bytes);
       await sharepoint.fileDocument({ candidate, fileName: safe, bytes }).catch(() => {});
       names.push(file.name);
@@ -124,12 +147,18 @@ portalApi.post('/submissions', async (req, res) => {
     if (!candidate || !appliesToCandidate(def, candidate)) return res.status(403).json({ error: 'This form is not assigned to you' });
   }
 
-  const missing = def.fields.filter((f) => f.required && !data?.[f.key]).map((f) => f.label);
+  const isEmpty = (v) => v == null || (Array.isArray(v) ? v.length === 0 : String(v).trim() === '');
+  const missing = def.fields.filter((f) => f.required && isEmpty(data?.[f.key])).map((f) => f.label);
   if (missing.length) return res.status(400).json({ error: 'Missing required fields', missing });
 
   const submission = db.insert('submissions', { candidateId, formKey, data: {}, status: 'complete', submittedAt: nowISO() });
   // Save uploaded documents to the HR folder, then store the cleaned answers.
-  await processUploads(def, data, candidate, submission.id);
+  try {
+    await processUploads(def, data, candidate, submission.id);
+  } catch (e) {
+    db.remove('submissions', submission.id);
+    return res.status(e.status || 400).json({ error: e.message || 'Upload failed' });
+  }
   db.update('submissions', submission.id, { data });
 
   let fileName, filedPath;
@@ -190,18 +219,46 @@ export const api = Router();
 api.use(requireAdmin);
 
 // --- Form Builder -----------------------------------------------------------
+// Only these hosts may be used as embed/link targets — they're the same trusted
+// origins allowed by the CSP frame-src. Relative paths (bundled /templates) are OK.
+// Anything else is rejected so an admin can't point an iframe at an arbitrary site.
+const ALLOWED_EMBED_HOSTS = [
+  'adobe.com', 'documents.adobe.com', 'na4.documents.adobe.com',
+  'microsoft.com', 'office.com', 'office365.com', 'sharepoint.com',
+  'forms.office.com', 'outlook.office365.com',
+];
+function embedUrlError(url) {
+  if (url == null || url === '') return null;
+  const s = String(url);
+  if (s.startsWith('/')) return null; // bundled relative asset (e.g. /templates/...)
+  let u;
+  try { u = new URL(s); } catch { return 'must be a valid URL'; }
+  if (u.protocol !== 'https:') return 'must use https';
+  const host = u.hostname.toLowerCase();
+  const ok = ALLOWED_EMBED_HOSTS.some((h) => host === h || host.endsWith('.' + h));
+  return ok ? null : `host "${host}" is not an allowed embed/link target`;
+}
+
 api.get('/forms', (_req, res) => res.json(db.all('formDefinitions')));
 api.post('/forms', (req, res) => {
-  const { key, title, description, appliesTo = 'all', fields = [] } = req.body;
+  const { key, title, description, appliesTo = 'all', fields = [], type, embedUrl, linkUrl } = req.body;
   if (!key || !title) return res.status(400).json({ error: 'key and title required' });
   if (db.find('formDefinitions', (d) => d.key === key)) return res.status(409).json({ error: 'key exists' });
-  res.status(201).json(db.insert('formDefinitions', { id: key, key, title, description, appliesTo, fields, version: 1 }));
+  for (const url of [embedUrl, linkUrl]) {
+    const err = embedUrlError(url);
+    if (err) return res.status(400).json({ error: `Embed/link URL ${err}` });
+  }
+  res.status(201).json(db.insert('formDefinitions', { id: key, key, title, description, appliesTo, fields, type, embedUrl, linkUrl, version: 1 }));
 });
 api.put('/forms/:key', (req, res) => {
   const f = db.find('formDefinitions', (d) => d.key === req.params.key);
   if (!f) return res.status(404).json({ error: 'not found' });
   const patch = { ...req.body };
   delete patch.id; delete patch.key;
+  for (const url of [patch.embedUrl, patch.linkUrl]) {
+    const err = embedUrlError(url);
+    if (err) return res.status(400).json({ error: `Embed/link URL ${err}` });
+  }
   patch.version = (f.version || 1) + 1;
   res.json(db.update('formDefinitions', f.id, patch));
 });
@@ -299,8 +356,10 @@ export async function runReferenceReminders(candidateId) {
   let reminders = 0, escalations = 0;
   for (const r of refs) {
     const d = daysSince(r.createdAt || r.sentAt);
-    const remindedToday = r.lastReminderAt && daysSince(r.lastReminderAt) < 1;
-    if (d > 0 && d % REMINDER_EVERY_DAYS === 0 && !remindedToday) {
+    // Send a reminder once the time SINCE the last contact reaches the interval,
+    // rather than only on exact day boundaries (which a missed daily run would skip).
+    const sinceLast = daysSince(r.lastReminderAt || r.createdAt || r.sentAt);
+    if (d >= REMINDER_EVERY_DAYS && sinceLast >= REMINDER_EVERY_DAYS) {
       await sendReferenceRequest(r, true);
       db.update('references', r.id, { sentAt: nowISO(), lastReminderAt: nowISO(), remindersSent: (r.remindersSent || 0) + 1 });
       reminders++;
@@ -320,8 +379,16 @@ export async function runReferenceReminders(candidateId) {
 export const webhookRouter = Router();
 webhookRouter.post('/reference-completed', (req, res) => {
   const secret = process.env.REFERENCE_WEBHOOK_SECRET;
-  if (secret && req.body?.secret !== secret && req.headers['x-webhook-secret'] !== secret) {
-    return res.status(401).json({ error: 'invalid webhook secret' });
+  // In live mode the secret is mandatory — an unauthenticated webhook must never
+  // be able to mark references received against a real candidate.
+  if (config.live && !secret) {
+    return res.status(503).json({ error: 'webhook not configured' });
+  }
+  if (secret) {
+    const provided = req.body?.secret || req.headers['x-webhook-secret'] || '';
+    if (!safeEqual(String(provided), secret)) {
+      return res.status(401).json({ error: 'invalid webhook secret' });
+    }
   }
   const email = String(req.body?.referenceEmail || '').trim().toLowerCase();
   const name = String(req.body?.referenceName || '').trim().toLowerCase();
@@ -399,10 +466,13 @@ api.post('/rth', (req, res) => {
   if (linked) finalData.candidateName = `${linked.firstName} ${linked.lastName}`;
   const role = db.get('accessRoles', roleId);
   const signatures = def.signatureChain.map((s) => ({ ...s, signedAt: null, signedBy: null }));
-  const items = (accessItems || []).map((key) => {
-    const item = def.accessCatalog.find((a) => a.key === key);
-    return { key, label: item?.label, dept: def.departments[item?.dept] || item?.dept, kind: item?.kind || 'software', status: 'requested' };
-  });
+  const items = (accessItems || [])
+    .map((key) => {
+      const item = def.accessCatalog.find((a) => a.key === key);
+      if (!item) return null; // ignore keys that aren't in the catalog
+      return { key, label: item.label, dept: def.departments[item.dept] || item.dept, kind: item.kind || 'software', status: 'requested' };
+    })
+    .filter(Boolean);
   res.status(201).json(db.insert('accessRequests', { candidateId: linked?.id || null, data: finalData, roleId, roleName: role?.name, signatures, items, status: 'awaiting-signatures' }));
 });
 
@@ -428,30 +498,41 @@ api.post('/rth/:id/sign', async (req, res) => {
   step.signedAt = nowISO();
   step.signedBy = user.name;
   const allSigned = r.signatures.every((s) => s.signedAt);
-  r.status = allSigned ? 'approved' : 'awaiting-signatures';
-  db.update('accessRequests', r.id, { signatures: r.signatures, status: r.status });
+
+  // Record the signature first. Only flip to "approved" AFTER the PDFs and
+  // provisioning side-effects succeed — so a PDF failure can't leave an RTH
+  // marked approved with no generated document.
+  db.update('accessRequests', r.id, { signatures: r.signatures });
 
   if (allSigned) {
-    const def = db.find('formDefinitions', (d) => d.isRTH);
-    const submission = { id: r.id, data: r.data, submittedAt: nowISO() };
-    // Leadership PDF — includes pay rate; for HR/Finance/CEO only.
-    const bytes = await generateSubmissionPdf({ definition: def, submission, candidate: null, signatures: r.signatures });
-    writeFileSync(join(PDF_DIR, `${r.id}.pdf`), bytes);
-    // Permissions PDF — salary-free; this is what provisioners receive.
-    const permBytes = await generatePermissionsPdf({ rth: r });
-    writeFileSync(join(PDF_DIR, `${r.id}-permissions.pdf`), permBytes);
+    try {
+      const def = db.find('formDefinitions', (d) => d.isRTH);
+      const submission = { id: r.id, data: r.data, submittedAt: nowISO() };
+      // Leadership PDF — includes pay rate; for HR/Finance/CEO only.
+      const bytes = await generateSubmissionPdf({ definition: def, submission, candidate: null, signatures: r.signatures });
+      writeFileSync(join(PDF_DIR, `${r.id}.pdf`), bytes);
+      // Permissions PDF — salary-free; this is what provisioners receive.
+      const permBytes = await generatePermissionsPdf({ rth: r });
+      writeFileSync(join(PDF_DIR, `${r.id}-permissions.pdf`), permBytes);
 
-    // If linked to a candidate, everything ties back to their record.
-    const linked = r.candidateId ? db.get('candidates', r.candidateId) : null;
-    if (linked) {
-      await sharepoint.fileDocument({ candidate: linked, fileName: `Request to Hire_${linked.lastName}_${linked.firstName}.pdf`, bytes }).catch(() => {});
-      await graph.createAccount({ candidate: linked }).catch(() => {});
-      db.update('candidates', linked.id, { rthId: r.id, accessStatus: 'approved' });
-    } else {
-      const [firstName, ...rest] = (r.data.candidateName || '').split(' ');
-      await graph.createAccount({ candidate: { firstName, lastName: rest.join(' ') || '', email: r.data.email } }).catch(() => {});
+      // If linked to a candidate, everything ties back to their record.
+      const linked = r.candidateId ? db.get('candidates', r.candidateId) : null;
+      if (linked) {
+        await sharepoint.fileDocument({ candidate: linked, fileName: `Request to Hire_${linked.lastName}_${linked.firstName}.pdf`, bytes }).catch(() => {});
+        await graph.createAccount({ candidate: linked }).catch(() => {});
+        db.update('candidates', linked.id, { rthId: r.id, accessStatus: 'approved' });
+      } else {
+        const [firstName, ...rest] = (r.data.candidateName || '').split(' ');
+        await graph.createAccount({ candidate: { firstName, lastName: rest.join(' ') || '', email: r.data.email } }).catch(() => {});
+      }
+      await notify.email({ to: config.mailFrom, subject: `RTH approved: ${r.data.candidateName}`, candidateId: linked?.id }).catch(() => {});
+      db.update('accessRequests', r.id, { status: 'approved' });
+    } catch (e) {
+      // Signature is saved; approval did not complete. Surface it so it can be retried.
+      return res.status(500).json({ error: 'Signature recorded, but finalizing the approval failed: ' + e.message, ...db.get('accessRequests', r.id) });
     }
-    await notify.email({ to: config.mailFrom, subject: `RTH approved: ${r.data.candidateName}`, candidateId: linked?.id }).catch(() => {});
+  } else {
+    db.update('accessRequests', r.id, { status: 'awaiting-signatures' });
   }
   res.json(db.get('accessRequests', r.id));
 });

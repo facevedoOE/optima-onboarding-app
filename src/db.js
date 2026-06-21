@@ -6,7 +6,7 @@
 // these same functions against Dataverse / SQL / SharePoint — nothing else in
 // the app changes. That is the whole point of keeping it behind this interface.
 // ---------------------------------------------------------------------------
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -30,8 +30,15 @@ function load() {
   if (cache) return cache;
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
   if (existsSync(DATA_FILE)) {
-    cache = JSON.parse(readFileSync(DATA_FILE, 'utf8'));
-    for (const k of Object.keys(EMPTY)) if (!cache[k]) cache[k] = [];
+    try {
+      cache = JSON.parse(readFileSync(DATA_FILE, 'utf8'));
+      for (const k of Object.keys(EMPTY)) if (!cache[k]) cache[k] = [];
+    } catch (e) {
+      // Corrupt store: back it up rather than crash, and start clean.
+      try { renameSync(DATA_FILE, DATA_FILE + '.corrupt-' + Date.now()); } catch (_) {}
+      console.error('store.json was unreadable; backed it up and started empty:', e.message);
+      cache = structuredClone(EMPTY);
+    }
   } else {
     cache = structuredClone(EMPTY);
   }
@@ -40,7 +47,10 @@ function load() {
 
 function persist() {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(DATA_FILE, JSON.stringify(cache, null, 2));
+  // Atomic write: write a temp file then rename, so a crash mid-write can't corrupt the store.
+  const tmp = DATA_FILE + '.tmp';
+  writeFileSync(tmp, JSON.stringify(cache, null, 2));
+  renameSync(tmp, DATA_FILE);
 }
 
 function nowISO() {

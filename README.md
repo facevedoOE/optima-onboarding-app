@@ -12,6 +12,7 @@ onboarding stack. Built to fix the three pains that triggered this project:
 ## Run it
 
 ```bash
+cd app
 npm install
 npm start          # http://localhost:4000  (auto-seeds on first run)
 npm run seed       # optional: reset to clean demo data

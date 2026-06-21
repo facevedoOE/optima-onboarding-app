@@ -11,10 +11,13 @@
 // Result either way: req.session.user = { role, name, email, candidateId?, approverRoles? }
 // ---------------------------------------------------------------------------
 import session from 'express-session';
+import FileStoreFactory from 'session-file-store';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { ConfidentialClientApplication } from '@azure/msal-node';
 import { config } from './config.js';
 import { db } from './db.js';
+
+const FileStore = FileStoreFactory(session);
 
 const APPROVER_ROLES = ['HR', 'Finance', 'CEO'];
 
@@ -52,10 +55,15 @@ export function candidatePortalUrl(candidateId) {
 
 export function setupAuth(app) {
   app.use(session({
+    // Persist sessions to disk so they survive restarts (the default MemoryStore
+    // drops every session on restart and leaks memory). On Azure's ephemeral
+    // filesystem this still resets on redeploy — a SQL/Redis store is the next
+    // step for multi-instance scale, but this is correct for a single instance.
+    store: new FileStore({ path: './data/sessions', retries: 1, logFn: () => {} }),
     secret: config.sessionSecret,
     resave: false,
     saveUninitialized: false,
-    cookie: { httpOnly: true, sameSite: 'lax', secure: config.live && config.baseUrl.startsWith('https') },
+    cookie: { httpOnly: true, sameSite: 'lax', secure: config.live },
   }));
 
   app.get('/api/me', (req, res) => {

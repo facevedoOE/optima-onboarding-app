@@ -9,7 +9,32 @@ import { db } from './src/db.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 
-app.use(express.json({ limit: '50mb' })); // allows base64 document uploads
+// Behind Azure App Service's HTTPS reverse proxy: trust the first proxy so
+// secure cookies and req.protocol/req.ip work correctly.
+app.set('trust proxy', 1);
+
+// Content Security Policy. We deliberately embed third-party documents
+// (Adobe Sign, Microsoft Forms/Bookings) in iframes, so frame-src allows those
+// origins; everything else is locked to same-origin.
+app.use((_req, res, next) => {
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "frame-src 'self' https://*.adobe.com https://*.documents.adobe.com https://*.microsoft.com https://*.office.com https://*.office365.com https://*.sharepoint.com https://forms.office.com https://outlook.office365.com",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'self'",
+  ].join('; '));
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
+app.use(express.json({ limit: '25mb' })); // allows base64 document uploads
 app.use(express.urlencoded({ extended: true }));
 
 // Auth (mounts /api/me, /auth/*) must come before protected routes.
@@ -31,9 +56,12 @@ app.use(express.static(join(__dirname, 'public')));
 app.use('/templates', express.static(join(__dirname, 'templates')));
 app.get('*', (_req, res) => res.sendFile(join(__dirname, 'public', 'index.html')));
 
+// Seed on first run. In live mode we ONLY seed configuration (form definitions +
+// access roles) — never demo candidates. In demo mode we load the full dataset.
 if (db.all('formDefinitions').length === 0) {
   console.log('Empty store — seeding…');
-  await import('./src/seed.js');
+  const { seedConfig, seedDemo } = await import('./src/seed.js');
+  if (config.live) seedConfig(); else seedDemo();
 }
 
 // Step 5: run reference reminders/escalations daily (production scheduler).

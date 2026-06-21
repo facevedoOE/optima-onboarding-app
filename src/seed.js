@@ -7,6 +7,7 @@
 // (or in the in-app Form Builder) — no recreating PDFs, no re-linking, no flow
 // surgery.
 // ---------------------------------------------------------------------------
+import { pathToFileURL } from 'node:url';
 import { db } from './db.js';
 
 // Reusable field-type reference (what the renderer understands):
@@ -374,10 +375,27 @@ const demoCandidates = [
   },
 ];
 
-// --- Run ---------------------------------------------------------------------
-db.reset();
-db.replace('formDefinitions', formDefinitions);
-db.replace('accessRoles', accessRoles);
-db.replace('candidates', demoCandidates.map((c) => ({ ...c, createdAt: new Date().toISOString() })));
+// --- Seeders -----------------------------------------------------------------
+// seedConfig: the real configuration the app needs to function (form definitions
+// + access roles). Safe to run in LIVE mode on an empty store — it adds NO fake
+// candidates and does NOT wipe existing data.
+export function seedConfig() {
+  if (db.all('formDefinitions').length === 0) db.replace('formDefinitions', formDefinitions);
+  if (db.all('accessRoles').length === 0) db.replace('accessRoles', accessRoles);
+  console.log(`Seeded config: ${formDefinitions.length} form definitions, ${accessRoles.length} access roles.`);
+}
 
-console.log(`Seeded: ${formDefinitions.length} form definitions, ${accessRoles.length} access roles, ${accessCatalog.length} access items, ${demoCandidates.length} demo candidates.`);
+// seedDemo: a full reset to the demo dataset, INCLUDING fake candidates. For
+// local/demo use only — never call this in live mode.
+export function seedDemo() {
+  db.reset();
+  db.replace('formDefinitions', formDefinitions);
+  db.replace('accessRoles', accessRoles);
+  db.replace('candidates', demoCandidates.map((c) => ({ ...c, createdAt: new Date().toISOString() })));
+  console.log(`Seeded demo: ${formDefinitions.length} form definitions, ${accessRoles.length} access roles, ${accessCatalog.length} access items, ${demoCandidates.length} demo candidates.`);
+}
+
+// Direct run (`npm run seed`) loads the full demo dataset.
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  seedDemo();
+}

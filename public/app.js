@@ -471,7 +471,7 @@ views['/forms/new'] = async () => {
 
 views['/forms/:key'] = async (key) => {
   const f = await api('/forms/' + key);
-  const TYPES = ['text', 'email', 'tel', 'date', 'number', 'textarea', 'select', 'attestation'];
+  const TYPES = ['text', 'email', 'tel', 'date', 'number', 'textarea', 'select', 'multiselect', 'attestation', 'signature', 'file'];
   view.innerHTML = `
     <div class="crumb"><a href="#/forms">Form Builder</a> › ${esc(f.title)}</div>
     <div class="page-head"><div><h1>${esc(f.title)} <span class="tag-soft">v${f.version}</span></h1>
