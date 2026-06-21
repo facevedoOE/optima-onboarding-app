@@ -124,6 +124,17 @@ portalApi.post('/submissions', async (req, res) => {
     ({ fileName, filedPath } = await buildAndFilePdf({ definition: def, submission, candidate }));
   }
   db.update('submissions', submission.id, { fileName, filedPath });
+
+  // Step 2A: submitting the references form auto-creates each reference and sends a request.
+  if (def.referenceIntake && candidate) {
+    for (let i = 1; i <= 3; i++) {
+      const name = data?.[`ref${i}Name`]; const email = data?.[`ref${i}Email`];
+      if (!name || !email) continue;
+      if (db.find('references', (r) => r.candidateId === candidate.id && (r.email || '').toLowerCase() === String(email).toLowerCase())) continue;
+      const ref = db.insert('references', { candidateId: candidate.id, name, email, status: 'requested', sentAt: nowISO() });
+      await sendReferenceRequest(ref);
+    }
+  }
   res.status(201).json({ ...submission, fileName, filedPath });
 });
 
@@ -217,14 +228,58 @@ function logCandidate(candidateId, message, kind = 'reference') {
   db.update('candidates', candidateId, { activity });
 }
 
-async function sendReferenceRequest(ref) {
+async function sendReferenceRequest(ref, reminder = false) {
   await notify.email({
     to: ref.email, candidateId: ref.candidateId,
-    subject: `Reference request for an Optima candidate`,
-    html: `<p>Hello ${ref.name},</p><p>Please complete this professional reference:</p><p><a href="${REFERENCE_FORM_URL}">Complete the reference form</a></p>`,
+    subject: reminder ? `Reminder: reference request for an Optima candidate` : `Reference request for an Optima candidate`,
+    html: `<p>Hello ${ref.name},</p><p>${reminder ? 'A quick reminder to complete' : 'Please complete'} this professional reference:</p><p><a href="${REFERENCE_FORM_URL}">Complete the reference form</a></p>`,
   });
-  logCandidate(ref.candidateId, `Reference request sent to ${ref.name} <${ref.email}>`);
+  logCandidate(ref.candidateId, `${reminder ? 'Reference reminder' : 'Reference request'} sent to ${ref.name} <${ref.email}>`);
 }
+
+// Step 5: reminders every 3 days for un-returned references; escalate to HR at day 9.
+const REMINDER_EVERY_DAYS = 3;
+const ESCALATE_DAY = 9;
+function daysSince(iso) { return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); }
+
+export async function runReferenceReminders(candidateId) {
+  const refs = db.filter('references', (r) => r.status !== 'received' && (!candidateId || r.candidateId === candidateId));
+  let reminders = 0, escalations = 0;
+  for (const r of refs) {
+    const d = daysSince(r.createdAt || r.sentAt);
+    const remindedToday = r.lastReminderAt && daysSince(r.lastReminderAt) < 1;
+    if (d > 0 && d % REMINDER_EVERY_DAYS === 0 && !remindedToday) {
+      await sendReferenceRequest(r, true);
+      db.update('references', r.id, { sentAt: nowISO(), lastReminderAt: nowISO(), remindersSent: (r.remindersSent || 0) + 1 });
+      reminders++;
+    }
+    if (d >= ESCALATE_DAY && !r.escalatedAt) {
+      await notify.email({ to: config.mailFrom, candidateId: r.candidateId, subject: `Reference overdue (${d} days): ${r.name}` });
+      logCandidate(r.candidateId, `Reference overdue (${d} days) — escalated to HR: ${r.name}`);
+      db.update('references', r.id, { escalatedAt: nowISO() });
+      escalations++;
+    }
+  }
+  return { checked: refs.length, reminders, escalations };
+}
+
+// Step 2B: Adobe Sign webhook → auto-mark a reference received. Unauthenticated
+// (Adobe calls it); optional shared secret via REFERENCE_WEBHOOK_SECRET.
+export const webhookRouter = Router();
+webhookRouter.post('/reference-completed', (req, res) => {
+  const secret = process.env.REFERENCE_WEBHOOK_SECRET;
+  if (secret && req.body?.secret !== secret && req.headers['x-webhook-secret'] !== secret) {
+    return res.status(401).json({ error: 'invalid webhook secret' });
+  }
+  const email = String(req.body?.referenceEmail || '').trim().toLowerCase();
+  const name = String(req.body?.referenceName || '').trim().toLowerCase();
+  const ref = db.find('references', (r) => r.status !== 'received'
+    && ((email && (r.email || '').toLowerCase() === email) || (name && (r.name || '').toLowerCase() === name)));
+  if (!ref) return res.status(404).json({ error: 'no matching pending reference' });
+  db.update('references', ref.id, { status: 'received', receivedAt: nowISO() });
+  logCandidate(ref.candidateId, `Reference received from ${ref.name} (auto)`);
+  res.json({ ok: true, referenceId: ref.id });
+});
 
 api.post('/candidates/:id/references', async (req, res) => {
   const c = db.get('candidates', req.params.id);
@@ -268,6 +323,10 @@ api.delete('/references/:id', (req, res) => {
   logCandidate(ref.candidateId, `Reference removed: ${ref.name}`);
   res.json({ ok: true });
 });
+
+// Run reminders (also runs on a daily schedule in server.js). All, or one candidate.
+api.post('/references/run-reminders', async (_req, res) => res.json(await runReferenceReminders()));
+api.post('/candidates/:id/references/remind', async (req, res) => res.json(await runReferenceReminders(req.params.id)));
 
 // --- Request to Hire --------------------------------------------------------
 api.get('/rth', (_req, res) => res.json(db.all('accessRequests')));

@@ -42,9 +42,10 @@ const formDefinitions = [
     id: 'references',
     key: 'references',
     title: 'Professional References',
-    description: 'Three references who directly supervised your work in a leadership capacity.',
+    description: 'Three references who directly supervised your work in a leadership capacity. When you submit, each reference is automatically emailed a request.',
     appliesTo: 'all',
-    version: 1,
+    version: 2,
+    referenceIntake: true, // on submit: auto-create reference entries + send each a request
     fields: [
       { key: 'ref1Name', label: 'Reference 1 — Name', type: 'text', required: true },
       { key: 'ref1Email', label: 'Reference 1 — Email', type: 'email', required: true },

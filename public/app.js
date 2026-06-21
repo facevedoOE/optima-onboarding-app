@@ -214,7 +214,8 @@ views['/candidate/:id'] = async (id) => {
           <a class="btn ghost sm" href="#/rth/${c.rth.id}">Open</a></div></div>`
       : `<div class="row"><div><div class="t">Request to Hire</div><div class="d">No request yet for this candidate.</div></div>
           <button class="btn sm" id="newRth">Create Request to Hire</button></div>`}
-    <h2 style="margin-top:24px">References</h2>
+    <h2 style="margin-top:24px;display:flex;align-items:center;justify-content:space-between;gap:12px">References
+      ${(c.references || []).some((r) => r.status !== 'received') ? `<button class="btn ghost sm" id="refRemind">Send reminders to pending</button>` : ''}</h2>
     ${(c.references || []).length
       ? c.references.map((r) => `<div class="row">
           <div><div class="t">${esc(r.name)}</div><div class="d">${esc(r.email)}${r.sentAt ? ` · sent ${new Date(r.sentAt).toLocaleDateString('en-US')}` : ''}</div></div>
@@ -272,6 +273,11 @@ views['/candidate/:id'] = async (id) => {
     try { await api('/references/' + b.dataset.refDel, { method: 'DELETE' }); toast('Reference removed'); views['/candidate/:id'](id); }
     catch (err) { toast(err.message); }
   });
+  const refRemind = $('#refRemind');
+  if (refRemind) refRemind.onclick = async () => {
+    try { const r = await api('/candidates/' + id + '/references/remind', { method: 'POST' }); toast(`Reminders sent: ${r.reminders}, escalations: ${r.escalations}`); views['/candidate/:id'](id); }
+    catch (err) { toast(err.message); }
+  };
   $('#sendLink').onclick = async () => {
     try {
       const r = await api('/candidates/' + id + '/send-portal-link', { method: 'POST' });
