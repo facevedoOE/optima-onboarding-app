@@ -74,15 +74,16 @@ const formDefinitions = [
     id: 'ccps-charter',
     key: 'ccps-charter',
     title: 'Charter School Full-Time Employee',
-    description: 'Complete your part of the official Collier County packet here. Your answers fill the real county PDF, which is saved to your HR folder for signature and submission.',
-    appliesTo: 'oao-fulltime',
-    version: 4,
+    description: 'Complete and sign the official Collier County full-time packet exactly as-is on the embedded document below.',
+    appliesTo: 'oao',
+    version: 5,
     group: 'oao-charter',
     badge: 'OAO Full-Time Employees Only',
     formType: 'County Form (PDF)',
-    // PDF-TEMPLATE form: fields fill the actual county PDF (templates/ccps-fulltime.pdf).
-    // `pdf` lists the real PDF field name(s) each answer fills.
-    type: 'pdfTemplate',
+    // Embed the actual county PDF document (no Adobe Sign version exists).
+    type: 'embed',
+    embedUrl: '/templates/ccps-fulltime.pdf',
+    // pdfTemplate fields kept for the alternative "fill + auto-save to SharePoint" mode.
     pdfTemplate: 'ccps-fulltime.pdf',
     fullNameFields: ['Applicant Name', 'Name Please Print'],
     fields: [
@@ -122,8 +123,8 @@ const formDefinitions = [
     key: 'ccps-contractor',
     title: 'Charter School Part-Time/Contractor Employee',
     description: 'Official Collier County charter contractor form — complete it exactly as-is on the embedded Adobe document below.',
-    appliesTo: 'oao-contractor',
-    version: 4,
+    appliesTo: 'oao',
+    version: 5,
     group: 'oao-charter',
     badge: 'OAO Part-Time or Contract Employees Only',
     formType: 'Adobe Form',

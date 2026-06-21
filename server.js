@@ -26,6 +26,8 @@ app.use('/api', api);
 
 // Brand assets ship inside the app (public/assets) so it's self-contained.
 app.use(express.static(join(__dirname, 'public')));
+// Serve bundled blank form templates (e.g. the county CCPS PDF) for embedding.
+app.use('/templates', express.static(join(__dirname, 'templates')));
 app.get('*', (_req, res) => res.sendFile(join(__dirname, 'public', 'index.html')));
 
 if (db.all('formDefinitions').length === 0) {

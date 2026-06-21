@@ -327,7 +327,11 @@ views['/candidate/:id'] = async (id) => {
 
 // Embedded external form (e.g. Adobe Sign) — the real document, completed exactly as-is, in an iframe.
 function embedFormHTML(def) {
-  return `<div class="note">Complete and sign the official document below — it's the real form, submitted exactly as required. Your signed copy is filed automatically once you finish, then mark it complete.</div>
+  const isPdf = (def.embedUrl || '').toLowerCase().endsWith('.pdf');
+  const note = isPdf
+    ? `Complete and sign the official county document below, then <strong>download your completed copy</strong> and mark this complete — HR submits it to the county. <a href="${esc(def.embedUrl)}" target="_blank" rel="noopener">Open in a new tab</a> if it doesn't display.`
+    : `Complete and sign the official document below — it's the real form, submitted exactly as required. Your signed copy is filed automatically once you finish, then mark it complete.`;
+  return `<div class="note">${note}</div>
     <iframe src="${esc(def.embedUrl)}" title="${esc(def.title)}" style="width:100%;height:78vh;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
     <div style="margin-top:14px"><button class="btn green" id="embedDone">I've completed this form</button></div>`;
 }
