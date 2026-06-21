@@ -234,10 +234,11 @@ const requestToHire = {
   isRTH: true, // signals the special role-based access + signature chain UI
   version: 2,
   // Signature chain — replaces the Adobe Sign "RTH_Leadership" sequential agreement.
+  // Submitted by hiring manager / HR, then Finance (Lu), then CEO (Adam).
   signatureChain: [
-    { key: 'hr', role: 'HR', label: 'HR Manager' },
-    { key: 'finance', role: 'Finance', label: 'Finance' },
-    { key: 'ceo', role: 'CEO', label: 'CEO' },
+    { key: 'hr', role: 'HR', label: 'HR' },
+    { key: 'finance', role: 'Finance', label: 'Finance — Lu' },
+    { key: 'ceo', role: 'CEO', label: 'CEO — Adam Mangana' },
   ],
   fields: [
     { key: 'candidateName', label: 'Candidate Name', type: 'text', required: true },
@@ -248,6 +249,11 @@ const requestToHire = {
     { key: 'payRate', label: 'Pay Rate', type: 'text', required: true },
     { key: 'email', label: 'Work Email (proposed)', type: 'email' },
     { key: 'phone', label: 'Phone', type: 'tel' },
+    // "Specify" line items from the Adobe permissions form — rendered after the access list.
+    { key: 'softwareOther', label: 'Other software (please specify)', type: 'text', section: 'access' },
+    { key: 'hardwareOther', label: 'Other hardware (please specify)', type: 'text', section: 'access' },
+    { key: 'llmDetails', label: 'LLM / AI tools — details', type: 'text', section: 'access' },
+    { key: 'adminPermissions', label: 'Admin permissions / special access needed', type: 'textarea', section: 'access' },
   ],
 };
 formDefinitions.push(requestToHire);
@@ -275,7 +281,8 @@ const accessCatalog = [
   { key: 'ramp', label: 'Ramp Card', dept: 'FIN', kind: 'software' },
   { key: 'quickbooks', label: 'Quickbooks', dept: 'FIN', kind: 'software' },
   { key: 'paychex', label: 'Paychex', dept: 'FIN', kind: 'software' },
-  { key: 'adobe', label: 'Adobe Creative Suite', dept: 'MKT', kind: 'software' },
+  { key: 'adobe', label: 'Adobe', dept: 'MKT', kind: 'software' },
+  { key: 'adobecc', label: 'Adobe Creative Suite', dept: 'MKT', kind: 'software' },
   { key: 'canva', label: 'Canva', dept: 'MKT', kind: 'software' },
   { key: 'hubspot', label: 'HubSpot', dept: 'MKT', kind: 'software' },
   { key: 'wordpress', label: 'Wordpress', dept: 'MKT', kind: 'software' },
@@ -311,7 +318,7 @@ const accessRoles = [
   },
   {
     id: 'role-marketing', name: 'Marketing',
-    defaults: ['microsoft', 'google', 'adobe', 'canva', 'hubspot', 'wordpress', 'envato', 'istock', 'pictory', 'endorsal', 'meta', 'laptop', 'monitor', 'mouse'],
+    defaults: ['microsoft', 'google', 'adobe', 'adobecc', 'canva', 'hubspot', 'wordpress', 'envato', 'istock', 'pictory', 'endorsal', 'meta', 'laptop', 'monitor', 'mouse'],
   },
   {
     id: 'role-finance', name: 'Finance / Operations',

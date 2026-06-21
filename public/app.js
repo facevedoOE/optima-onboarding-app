@@ -475,13 +475,14 @@ async function rthNew(prefillId) {
           <select id="candidate"><option value="">— not linked (standalone) —</option>
             ${cands.map((c) => `<option value="${c.id}" ${c.id === prefillId ? 'selected' : ''}>${esc(c.firstName)} ${esc(c.lastName)} · ${esc(c.position || '')}</option>`).join('')}</select>
           <div class="help">Linking ties the approval, account, and access back to this candidate's record.</div></div>
-        ${def.fields.map((fl) => renderField(fl)).join('')}
+        ${def.fields.filter((fl) => fl.section !== 'access').map((fl) => renderField(fl)).join('')}
         <h2>Access — pick a role to pre-fill</h2>
         <div class="note">Instead of 30 yes/no columns, choose a role and the sensible default bundle is selected. Adjust as needed. Each item routes to its owning department automatically.</div>
         <div class="field"><label>Role</label><select id="role"><option value="">Custom…</option>
           ${roles.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select></div>
         ${Object.entries(byDept).map(([d, items]) => `<div class="dept-group"><h4>${esc(def.departments[d] || d)}</h4>
           <div class="check-grid">${items.map((it) => `<label class="chk"><input type="checkbox" name="acc" value="${it.key}" data-key="${it.key}"> ${esc(it.label)}</label>`).join('')}</div></div>`).join('')}
+        ${def.fields.filter((fl) => fl.section === 'access').map((fl) => renderField(fl)).join('')}
         <button class="btn green" type="submit">Submit for signatures</button>
       </form>
     </div>`;
