@@ -1,0 +1,17 @@
+{
+  "name": "optima-onboarding",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Optima HR onboarding web app — schema-driven forms, candidate-centric data, role-based access provisioning",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "seed": "node --env-file-if-exists=.env src/seed.js"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^5.2.5",
+    "express": "^4.21.2",
+    "express-session": "^1.19.0",
+    "pdf-lib": "^1.17.1"
+  }
+}
