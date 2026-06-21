@@ -87,6 +87,27 @@ export const graph = {
     }
   },
 
+  // Offboarding — remove access (group membership / license). Demo logs it.
+  async revokeAccess({ candidate, item }) {
+    if (!config.live) {
+      logActivity(candidate?.id, { kind: 'revoke', message: `Revoked ${item.label} (${item.dept})` });
+      console.log(`[demo][graph] would revoke ${item.label}`);
+      return { ok: true };
+    }
+    try {
+      if (item.groupId && item.userId) {
+        await graphApi.del?.(`/groups/${item.groupId}/members/${item.userId}/$ref`);
+      } else if (item.skuId && item.userId) {
+        await graphApi.post(`/users/${item.userId}/assignLicense`, { addLicenses: [], removeLicenses: [item.skuId] });
+      }
+      logActivity(candidate?.id, { kind: 'revoke', message: `Revoked ${item.label} via Graph (${item.dept})` });
+      return { ok: true };
+    } catch (err) {
+      logActivity(candidate?.id, { kind: 'error', message: `Revoking ${item.label} failed: ${err.message}` });
+      throw err;
+    }
+  },
+
   async createAccount({ candidate }) {
     const upn = `${candidate.firstName}.${candidate.lastName}@${config.mailDomain}`.toLowerCase().replace(/\s+/g, '');
     if (!config.live) {

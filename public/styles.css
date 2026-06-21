@@ -251,3 +251,6 @@ table.log tr:last-child td{border-bottom:none}
 table.log tbody tr:hover{background:rgba(85,200,232,.06)}
 table.log td .empty{padding:30px;text-align:center}
 html[data-theme="dark"] table.log th{background:rgba(255,255,255,.03)}
+
+.pill.revoked,.pill.terminated{background:#fdecec;color:#b3261e}
+html[data-theme="dark"] .pill.revoked,html[data-theme="dark"] .pill.terminated{background:rgba(179,38,30,.22);color:#f3a39c}

@@ -516,17 +516,18 @@ views['/rth'] = async () => {
       <p class="sub">Every request, compiled. Replaces the wide spreadsheet.</p></div>
       <button class="btn gold" id="new">+ New Request</button></div>
     <div class="table-wrap"><table class="log">
-      <thead><tr><th>Candidate</th><th>Position</th><th>Role</th><th>Pay Rate</th><th>Access</th><th>HR</th><th>Finance</th><th>CEO</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Candidate</th><th>Position</th><th>Role</th><th>Pay Rate</th><th>Access</th><th>HR</th><th>Finance</th><th>CEO</th><th>Status</th><th>Termination</th><th></th></tr></thead>
       <tbody>${list.length ? list.map((r) => `<tr>
         <td><strong>${esc(r.data.candidateName)}</strong></td>
         <td>${esc(r.data.position || '—')}</td>
         <td>${esc(r.roleName || 'Custom')}</td>
         <td>${esc(r.data.payRate || '—')}</td>
-        <td>${(r.items || []).length}</td>
+        <td><a href="#/rth/${r.id}">${(r.items || []).length} access</a></td>
         <td>${sig(r, 'hr')}</td><td>${sig(r, 'finance')}</td><td>${sig(r, 'ceo')}</td>
         <td><span class="pill ${r.status}">${esc(r.status.replace(/-/g, ' '))}</span></td>
+        <td>${esc(r.terminationDate ? monthDay(r.terminationDate) : '—')}</td>
         <td><a href="#/rth/${r.id}">Open</a></td></tr>`).join('')
-      : `<tr><td colspan="10" class="empty">No requests yet.</td></tr>`}</tbody>
+      : `<tr><td colspan="11" class="empty">No requests yet.</td></tr>`}</tbody>
     </table></div>`;
   $('#new').onclick = () => go('/rth/new');
 };
@@ -608,11 +609,24 @@ views['/rth/:id'] = async (id) => {
       <div><h2>Access provisioning</h2><div class="card">
         ${r.status === 'awaiting-signatures' ? '<div class="note">Provisioning unlocks once all signatures are complete.</div>' : ''}
         ${Object.entries(itemsByDept).map(([d, items]) => `<div class="dept-group"><h4>${esc(d)}</h4>
-          ${items.map((it) => `<div class="row" style="margin-bottom:6px"><div class="t" style="font-size:.9rem">${esc(it.label)}</div>
-            ${it.status === 'provisioned' ? '<span class="pill provisioned">Provisioned</span>'
-              : `<button class="btn sm" data-prov="${it.key}" ${r.status === 'awaiting-signatures' ? 'disabled' : ''}>Provision</button>`}</div>`).join('')}
+          ${items.map((it) => `<div class="row" style="margin-bottom:6px">
+            <div class="t" style="font-size:.9rem">${esc(it.label)}${it.status === 'revoked' && it.revokedAt ? ` <span class="d">· revoked ${new Date(it.revokedAt).toLocaleDateString('en-US')}</span>` : ''}</div>
+            <div class="row-actions">
+              ${it.status === 'revoked' ? '<span class="pill revoked">Revoked</span>'
+                : it.status === 'provisioned' ? `<span class="pill provisioned">Provisioned</span><button class="btn ghost sm" data-revoke="${it.key}">Revoke</button>`
+                : `<button class="btn sm" data-prov="${it.key}" ${r.status === 'awaiting-signatures' ? 'disabled' : ''}>Provision</button>`}
+            </div></div>`).join('')}
         </div>`).join('') || '<div class="empty">No access items requested.</div>'}
-      </div></div>
+      </div>
+      ${r.status !== 'awaiting-signatures' ? `<div class="card" style="margin-top:12px">
+        <h4 class="dept-group" style="margin:0 0 10px">Offboarding</h4>
+        ${r.terminationDate
+          ? `<div class="note" style="margin:0">Terminated — all access revoked. Termination date: <strong>${esc(monthDay(r.terminationDate))}</strong>.</div>`
+          : `<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+              <div style="flex:1;min-width:150px"><label class="help" style="display:block;margin-bottom:4px">Termination date</label><input type="date" id="termDate"></div>
+              <button class="btn ghost sm" id="revokeAll">Revoke all access</button></div>`}
+      </div>` : ''}
+      </div>
     </div>`;
   view.querySelectorAll('[data-sign]').forEach((b) => b.onclick = async () => {
     // The server records the signed-in user as the approver (and enforces role).
@@ -623,6 +637,17 @@ views['/rth/:id'] = async (id) => {
     try { await api('/rth/' + id + '/provision', { method: 'POST', body: { itemKey: b.dataset.prov } }); toast('Provisioned'); views['/rth/:id'](id); }
     catch (err) { toast(err.message); }
   });
+  view.querySelectorAll('[data-revoke]').forEach((b) => b.onclick = async () => {
+    try { await api('/rth/' + id + '/revoke', { method: 'POST', body: { itemKey: b.dataset.revoke } }); toast('Access revoked'); views['/rth/:id'](id); }
+    catch (err) { toast(err.message); }
+  });
+  const revokeAll = $('#revokeAll');
+  if (revokeAll) revokeAll.onclick = async () => {
+    const date = $('#termDate').value;
+    if (!date && !confirm('No termination date entered — use today?')) return;
+    try { await api('/rth/' + id + '/terminate', { method: 'POST', body: { terminationDate: date } }); toast('All access revoked'); views['/rth/:id'](id); }
+    catch (err) { toast(err.message); }
+  };
 };
 
 // --- Candidate portal (the merged landing page) -----------------------------

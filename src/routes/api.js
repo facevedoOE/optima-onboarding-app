@@ -475,8 +475,38 @@ api.post('/rth/:id/provision', async (req, res) => {
   const linked = r.candidateId ? db.get('candidates', r.candidateId) : null;
   await graph.provisionAccess({ candidate: linked, item: { label: item.label, dept: item.dept } });
   item.status = 'provisioned';
-  r.status = r.items.every((i) => i.status === 'provisioned') ? 'complete' : 'provisioning';
+  if (r.status !== 'terminated') r.status = r.items.every((i) => i.status === 'provisioned') ? 'complete' : 'provisioning';
   db.update('accessRequests', r.id, { items: r.items, status: r.status });
+  res.json(db.get('accessRequests', r.id));
+});
+
+// Offboarding — revoke a single access item.
+api.post('/rth/:id/revoke', async (req, res) => {
+  const r = db.get('accessRequests', req.params.id);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  const item = r.items.find((i) => i.key === req.body.itemKey);
+  if (!item) return res.status(404).json({ error: 'item not found' });
+  const linked = r.candidateId ? db.get('candidates', r.candidateId) : null;
+  await graph.revokeAccess({ candidate: linked, item: { label: item.label, dept: item.dept } }).catch(() => {});
+  item.status = 'revoked'; item.revokedAt = nowISO();
+  db.update('accessRequests', r.id, { items: r.items });
+  res.json(db.get('accessRequests', r.id));
+});
+
+// Offboarding — set a termination date and revoke all remaining access.
+api.post('/rth/:id/terminate', async (req, res) => {
+  const r = db.get('accessRequests', req.params.id);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  const linked = r.candidateId ? db.get('candidates', r.candidateId) : null;
+  for (const item of r.items) {
+    if (item.status === 'revoked') continue;
+    await graph.revokeAccess({ candidate: linked, item: { label: item.label, dept: item.dept } }).catch(() => {});
+    item.status = 'revoked'; item.revokedAt = nowISO();
+  }
+  r.terminationDate = req.body.terminationDate || nowISO().slice(0, 10);
+  r.status = 'terminated';
+  if (linked) db.update('candidates', linked.id, { status: 'Terminated', terminationDate: r.terminationDate });
+  db.update('accessRequests', r.id, { items: r.items, terminationDate: r.terminationDate, status: r.status });
   res.json(db.get('accessRequests', r.id));
 });
 
@@ -492,7 +522,7 @@ function permView(r) {
   return {
     id: r.id, status: r.status,
     candidateName: r.data?.candidateName, position: r.data?.position,
-    startDate: r.data?.startDate, roleName: r.roleName, items: r.items,
+    startDate: r.data?.startDate, roleName: r.roleName, items: r.items, terminationDate: r.terminationDate,
     notes: { softwareOther: r.data?.softwareOther, hardwareOther: r.data?.hardwareOther, llmDetails: r.data?.llmDetails, adminPermissions: r.data?.adminPermissions },
     // NOTE: payRate / signatures deliberately omitted.
   };
