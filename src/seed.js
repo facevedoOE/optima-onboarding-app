@@ -171,7 +171,7 @@ const formDefinitions = [
     formType: 'Microsoft Bookings',
     // LINK form: opens an external booking page (Microsoft Bookings).
     type: 'link',
-    linkUrl: 'https://outlook.office365.com/book/REPLACE_WITH_BOOKINGS_LINK', // TODO: real Bookings URL from HR
+    linkUrl: 'https://outlook.office.com/book/OptimaOnboarding@optimaed.com/?ismsaljsauthenabled',
     fields: [],
   },
   {
