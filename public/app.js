@@ -13,6 +13,19 @@ function monthDay(iso) {
   return (m && d) ? `${MONTHS[m - 1]} ${d}` : iso;
 }
 
+// All timestamps display in Eastern (New York), regardless of viewer location.
+function fmtET(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString('en-US', {
+    timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  }) + ' ET';
+}
+function fmtETDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+}
+
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
     headers: { 'Content-Type': 'application/json' },
@@ -306,7 +319,7 @@ views['/candidate/:id'] = async (id) => {
       ${(c.references || []).some((r) => r.status !== 'received') ? `<button class="btn ghost sm" id="refRemind">Send reminders to pending</button>` : ''}</h2>
     ${(c.references || []).length
       ? c.references.map((r) => `<div class="row">
-          <div><div class="t">${esc(r.name)}</div><div class="d">${esc(r.email)}${r.sentAt ? ` · sent ${new Date(r.sentAt).toLocaleDateString('en-US')}` : ''}</div></div>
+          <div><div class="t">${esc(r.name)}</div><div class="d">${esc(r.email)}${r.sentAt ? ` · sent ${fmtETDate(r.sentAt)}` : ''}</div></div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span class="pill ${r.status === 'received' ? 'complete' : 'requested'}">${r.status === 'received' ? 'Received' : 'Requested'}</span>
             <button class="btn ghost sm" data-ref-resend="${r.id}">Resend</button>
@@ -324,7 +337,7 @@ views['/candidate/:id'] = async (id) => {
     </div>
     <div class="grid g2" style="margin-top:24px">
       <div><h2>Activity</h2><div class="card"><ul class="activity">
-        ${(c.activity || []).map((a) => `<li><span class="when">${new Date(a.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span><span>${esc(a.message)}</span></li>`).join('') || '<li>No activity yet.</li>'}
+        ${(c.activity || []).map((a) => `<li><span class="when">${fmtET(a.at)}</span><span>${esc(a.message)}</span></li>`).join('') || '<li>No activity yet.</li>'}
       </ul></div></div>
     </div>`;
   view.querySelectorAll('[data-fill]').forEach((b) => b.onclick = () => go(`/fill/${id}/${b.dataset.fill}`));
@@ -605,7 +618,7 @@ views['/rth/:id'] = async (id) => {
         ${r.signatures.map((s, i) => `<div class="sigstep ${s.signedAt ? 'signed' : (i === firstPending ? 'current' : '')}">
           <div class="sigdot">${s.signedAt ? '✓' : i + 1}</div>
           <div class="siginfo"><div class="who">${esc(s.label)} <span class="tag-soft">${esc(s.role)}</span></div>
-            <div class="when">${s.signedAt ? 'Signed by ' + esc(s.signedBy) + ' · ' + new Date(s.signedAt).toLocaleString('en-US') : 'Awaiting signature'}</div></div>
+            <div class="when">${s.signedAt ? 'Signed by ' + esc(s.signedBy) + ' · ' + fmtET(s.signedAt) : 'Awaiting signature'}</div></div>
           ${!s.signedAt && i === firstPending ? `<button class="btn sm" data-sign="${s.key}">Sign</button>` : ''}
         </div>`).join('')}
       </div></div>
@@ -617,9 +630,9 @@ views['/rth/:id'] = async (id) => {
         ${Object.entries(itemsByDept).map(([d, items]) => `<div class="dept-group"><h4>${esc(d)}</h4>
           ${items.map((it) => {
             const hw = it.kind === 'hardware';
-            const sub = it.status === 'revoked' && it.revokedAt ? ` · revoked ${new Date(it.revokedAt).toLocaleDateString('en-US')}`
-              : it.status === 'return-requested' && it.returnRequestedAt ? ` · return requested ${new Date(it.returnRequestedAt).toLocaleDateString('en-US')}`
-              : it.status === 'returned' && it.returnedAt ? ` · received ${new Date(it.returnedAt).toLocaleDateString('en-US')}` : '';
+            const sub = it.status === 'revoked' && it.revokedAt ? ` · revoked ${fmtETDate(it.revokedAt)}`
+              : it.status === 'return-requested' && it.returnRequestedAt ? ` · return requested ${fmtETDate(it.returnRequestedAt)}`
+              : it.status === 'returned' && it.returnedAt ? ` · received ${fmtETDate(it.returnedAt)}` : '';
             let actions;
             if (it.status === 'returned') actions = '<span class="pill provisioned">Returned</span>';
             else if (it.status === 'return-requested') actions = `<span class="pill return-requested">Return requested</span><button class="btn ghost sm" data-received="${it.key}">Mark received</button>`;
@@ -772,7 +785,7 @@ views['/submission/:id'] = async (id) => {
   view.innerHTML = `
     <div class="crumb"><a href="#/">Candidates</a>${s.candidateId ? ` › <a href="#/candidate/${s.candidateId}">${esc(s.candidateName || '')}</a>` : ''} › ${esc(s.formTitle)}</div>
     <div class="page-head"><div><h1>${esc(s.formTitle)}</h1>
-      <p class="sub">${esc(s.candidateName || '')}${s.submittedAt ? ` · submitted ${new Date(s.submittedAt).toLocaleString('en-US')}` : ''}</p></div>
+      <p class="sub">${esc(s.candidateName || '')}${s.submittedAt ? ` · submitted ${fmtET(s.submittedAt)}` : ''}</p></div>
       <a class="btn ghost sm" href="/api/submissions/${id}/pdf" target="_blank">View PDF</a></div>
     <div class="card" style="max-width:780px">
       ${rows.map((r) => `<div style="display:flex;gap:14px;padding:9px 0;border-bottom:1px dashed var(--line)">
