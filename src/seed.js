@@ -178,10 +178,11 @@ const formDefinitions = [
     id: 'employee-handbook',
     key: 'employee-handbook',
     title: 'Employee Handbook Acknowledgement',
-    description: 'Review the Employee Handbook and sign to acknowledge. (Placeholder — handbook document to be attached.)',
+    description: 'Coming soon — the Employee Handbook acknowledgement will be available here.',
     appliesTo: 'all',
     version: 1,
     formType: 'Signature',
+    comingSoon: true,
     fields: [
       { key: 'reviewed', label: 'I have received and reviewed the Optima Employee Handbook.', type: 'attestation', required: true },
       { key: 'signature', label: 'Type your full legal name to sign', type: 'signature', required: true },
@@ -191,10 +192,11 @@ const formDefinitions = [
     id: 'ai-policy',
     key: 'ai-policy',
     title: 'AI Policy Acknowledgement',
-    description: 'Review the AI Policy and sign to acknowledge. (Placeholder — policy document to be attached.)',
+    description: 'Coming soon — the AI Policy acknowledgement will be available here.',
     appliesTo: 'all',
     version: 1,
     formType: 'Signature',
+    comingSoon: true,
     fields: [
       { key: 'reviewed', label: 'I have read and agree to the Optima AI Policy.', type: 'attestation', required: true },
       { key: 'signature', label: 'Type your full legal name to sign', type: 'signature', required: true },
@@ -204,10 +206,11 @@ const formDefinitions = [
     id: 'it-policy',
     key: 'it-policy',
     title: 'IT Policy & Equipment Agreement',
-    description: 'IT completes the equipment/access section, then you review and sign. (Placeholder.)',
+    description: 'Coming soon — the IT Policy & Equipment agreement will be available here.',
     appliesTo: 'all',
     version: 1,
     formType: 'IT + Signature',
+    comingSoon: true,
     twoParty: true, // IT (admin) fills the admin fields first; candidate signs.
     fields: [
       { key: 'assignedEquipment', label: 'Assigned equipment', type: 'textarea', actor: 'admin' },

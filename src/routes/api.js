@@ -113,6 +113,7 @@ function candidateDetail(c) {
       key: d.key, title: d.title, description: d.description,
       status: sub ? sub.status : 'pending', submissionId: sub?.id,
       group: d.group, badge: d.badge, formType: d.formType, type: d.type,
+      comingSoon: d.comingSoon || false,
     };
   });
   const r = db.find('accessRequests', (a) => a.candidateId === c.id);

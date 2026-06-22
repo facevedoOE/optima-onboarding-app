@@ -200,6 +200,12 @@ const CHECKLIST_GROUPS = {
 };
 
 function checklistItemHtml(item, admin) {
+  if (item.comingSoon) {
+    return `<div class="row coming-soon">
+      <div><div class="t">${esc(item.title)}</div>
+        <div class="d">${esc(item.description || '')}</div></div>
+      <div class="row-actions"><span class="pill coming-soon">Coming soon</span></div></div>`;
+  }
   const badges = [];
   if (item.badge) badges.push(`<span class="cl-badge cl-badge-gold">${esc(item.badge)}</span>`);
   if (item.formType) badges.push(`<span class="cl-badge">${esc(item.formType)}</span>`);
@@ -689,9 +695,7 @@ views['/portal'] = async () => {
       <div class="bar-label"><span>Progress</span><span>${done} of ${p.checklist.length} complete</span></div>
       <div class="bar"><div style="width:${pct}%"></div></div>
     </div>
-    ${checklistHtml(p.checklist)}
-    <h2>Resources</h2>
-    <div class="grid g3">${w.resources.map((r) => `<div class="card resource-card"><div class="cand-name" style="font-size:1rem">${esc(r.title)}</div><div class="cand-meta" style="margin:0">${esc(r.desc)}</div></div>`).join('')}</div>`;
+    ${checklistHtml(p.checklist)}`;
   view.querySelectorAll('[data-fill]').forEach((b) => b.onclick = () => go('/myform/' + b.dataset.fill));
 };
 

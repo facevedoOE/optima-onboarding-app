@@ -256,3 +256,11 @@ html[data-theme="dark"] table.log th{background:rgba(255,255,255,.03)}
 html[data-theme="dark"] .pill.revoked,html[data-theme="dark"] .pill.terminated{background:rgba(179,38,30,.22);color:#f3a39c}
 .pill.return-requested{background:#fff2e0;color:#9a5a00}
 html[data-theme="dark"] .pill.return-requested{background:rgba(247,143,30,.22);color:#f6bd76}
+
+/* "Coming soon" checklist items — visible but greyed and non-actionable. */
+.row.coming-soon { opacity: 0.55; }
+.pill.coming-soon {
+  background: var(--border, #e2e8f0);
+  color: var(--muted, #64748b);
+  border: 1px solid var(--border, #cbd5e1);
+}
