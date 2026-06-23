@@ -513,6 +513,57 @@ api.post('/rth', (req, res) => {
   res.status(201).json(db.insert('accessRequests', { candidateId: linked?.id || null, data: finalData, roleId, roleName: role?.name, signatures, items, status: 'awaiting-signatures' }));
 });
 
+// Access-item owners: when an approved RTH includes one of these items, the owner
+// is auto-emailed the (salary-free) permissions PDF + a link to mark it provisioned.
+// Emails DERIVED from the names HR provided ({first-initial}{lastname}@optimaed.com,
+// matching amangana/mcorea) — VERIFY before relying in production. HubSpot + others TBD.
+const ACCESS_OWNERS = {
+  microsoft: ['mcorea@optimaed.com'],                       // Marvin Corea — IT
+  llm: ['mcorea@optimaed.com', 'facevedo@optimaed.com'],    // Marvin Corea & Francine — IT
+  google: ['lbristow@optimaed.com'],                        // Lorin Bristow — Marketing
+  jira: ['lbristow@optimaed.com'],                          // Lorin Bristow — Marketing
+  ramp: ['lyattaw@optimaed.com'],                           // Lisa Marie Yattaw — Finance
+  paychex: ['gfalcone@optimaed.com'],                       // Gina Falcone — HR
+  quickbooks: ['lbernard@optimaed.com'],                    // Lisa Bernard — Finance
+  adobe: ['mcorea@optimaed.com'],                           // Marvin Corea — IT
+  canva: ['lbristow@optimaed.com'],                         // Lorin Bristow — Marketing
+  wordpress: ['lbristow@optimaed.com'],                     // Lorin Bristow — Marketing
+  istock: ['lbristow@optimaed.com'],                        // Lorin Bristow — Marketing
+  endorsal: ['lbristow@optimaed.com'],                      // Lorin Bristow — Marketing
+  adobecc: ['lbristow@optimaed.com'],                       // Adobe Creative Suite — Lorin Bristow — Marketing
+  // hubspot: [],                                           // TBD — HR to provide
+  envato: ['lbristow@optimaed.com'],                        // Lorin Bristow — Marketing
+  pictory: ['lbristow@optimaed.com'],                       // Lorin Bristow — Marketing
+  meta: ['lbristow@optimaed.com'],                          // Lorin Bristow — Marketing
+  laptop: ['tgriffin@optimaed.com'],                        // Trae Griffin — Equipment
+  mouse: ['tgriffin@optimaed.com'],                         // Trae Griffin — Equipment
+  monitor: ['tgriffin@optimaed.com'],                       // Trae Griffin — Equipment
+  pen: ['tgriffin@optimaed.com'],                           // Trae Griffin — Equipment (Logitech Pen)
+};
+
+// Notify each access-item owner that an approved RTH needs their provisioning.
+async function notifyAccessOwners(rth) {
+  const byEmail = {}; // email -> [item labels]
+  for (const item of rth.items || []) {
+    for (const email of ACCESS_OWNERS[item.key] || []) {
+      (byEmail[email] = byEmail[email] || []).push(item.label || item.key);
+    }
+  }
+  const rthLink = `${config.baseUrl}/#/rth/${rth.id}`;
+  const pdfLink = `${config.baseUrl}/api/provisioner/rth/${rth.id}/pdf`;
+  for (const [email, labels] of Object.entries(byEmail)) {
+    await notify.email({
+      to: email,
+      candidateId: rth.candidateId || undefined,
+      subject: `Action needed: provision access for ${rth.data?.candidateName || 'a new hire'}`,
+      html: `<p>An approved Request to Hire needs you to provision:</p>
+        <ul>${labels.map((l) => `<li>${l}</li>`).join('')}</ul>
+        <p><a href="${pdfLink}">View the access summary (PDF — no salary info)</a></p>
+        <p>Once you've granted access, <a href="${rthLink}">mark it provisioned here</a>.</p>`,
+    }).catch(() => {});
+  }
+}
+
 api.post('/rth/:id/sign', async (req, res) => {
   const { stepKey } = req.body;
   const user = req.session.user;
@@ -572,6 +623,8 @@ api.post('/rth/:id/sign', async (req, res) => {
         await graph.createAccount({ candidate: { firstName, lastName: rest.join(' ') || '', email: r.data.email } }).catch(() => {});
       }
       await notify.email({ to: config.mailFrom, subject: `RTH approved: ${r.data.candidateName}`, candidateId: linked?.id }).catch(() => {});
+      // Auto-route: email each selected item's owner to provision + mark it done.
+      await notifyAccessOwners(r).catch(() => {});
       db.update('accessRequests', r.id, { status: 'approved' });
     } catch (e) {
       // Signature is saved; approval did not complete. Surface it so it can be retried.

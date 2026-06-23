@@ -554,8 +554,11 @@ views['/rth'] = async () => {
 async function rthNew(prefillId) {
   const [def, roles, cands] = await Promise.all([api('/forms/request-to-hire'), api('/roles'), api('/candidates')]);
   const candsById = Object.fromEntries(cands.map((c) => [c.id, c]));
-  const byDept = {};
-  for (const item of def.accessCatalog) (byDept[item.dept] = byDept[item.dept] || []).push(item);
+  const alpha = (a, b) => String(a.label).localeCompare(String(b.label));
+  const software = def.accessCatalog.filter((it) => it.kind !== 'hardware').sort(alpha);
+  const equipment = def.accessCatalog.filter((it) => it.kind === 'hardware').sort(alpha);
+  const accessGroups = [['Software & Products', software], ['Equipment', equipment]];
+  const rolesAlpha = [...roles].sort((a, b) => String(a.name).localeCompare(String(b.name)));
   view.innerHTML = `
     <div class="crumb"><a href="#/rth">Request to Hire</a> › New</div>
     <h1>New Request to Hire</h1>
@@ -569,9 +572,9 @@ async function rthNew(prefillId) {
         <h2>Access — pick a role to pre-fill</h2>
         <div class="note">Instead of 30 yes/no columns, choose a role and the sensible default bundle is selected. Adjust as needed. Each item routes to its owning department automatically.</div>
         <div class="field"><label>Role</label><select id="role"><option value="">Custom…</option>
-          ${roles.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select></div>
-        ${Object.entries(byDept).map(([d, items]) => `<div class="dept-group"><h4>${esc(def.departments[d] || d)}</h4>
-          <div class="check-grid">${items.map((it) => `<label class="chk"><input type="checkbox" name="acc" value="${it.key}" data-key="${it.key}"> ${esc(it.label)}</label>`).join('')}</div></div>`).join('')}
+          ${rolesAlpha.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select></div>
+        ${accessGroups.map(([title, items]) => items.length ? `<div class="dept-group"><h4>${esc(title)}</h4>
+          <div class="check-grid">${items.map((it) => `<label class="chk"><input type="checkbox" name="acc" value="${it.key}" data-key="${it.key}"> ${esc(it.label)}</label>`).join('')}</div></div>` : '').join('')}
         ${def.fields.filter((fl) => fl.section === 'access').map((fl) => renderField(fl)).join('')}
         <button class="btn green" type="submit">Submit for signatures</button>
       </form>
