@@ -264,3 +264,12 @@ html[data-theme="dark"] .pill.return-requested{background:rgba(247,143,30,.22);c
   color: var(--muted, #64748b);
   border: 1px solid var(--border, #cbd5e1);
 }
+
+/* Reusable data table (dataTable helper): tabs, filters, pagination. */
+.dt-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.dt-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.dt-tab.active { border-color: var(--brand, #55c8e8); color: var(--brand, #55c8e8); font-weight: 700; }
+.dt-showing { font-size: 12px; color: var(--muted, #64748b); margin-bottom: 6px; }
+.dt-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--muted, #64748b); }
+.dt-filter { width: 100%; box-sizing: border-box; font-size: 12px; padding: 3px 6px; }
+table.log thead tr:nth-child(2) th { padding-top: 0; }

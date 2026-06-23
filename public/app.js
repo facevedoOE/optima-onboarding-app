@@ -26,6 +26,69 @@ function fmtETDate(iso) {
   return new Date(iso).toLocaleDateString('en-US', { timeZone: 'America/New_York' });
 }
 
+// Reusable client table: status tabs, per-column filters, sort, pagination +
+// rows-per-page, CSV export. columns: [{ key, label, get(row)->string,
+// html(row)->string?, filter?:false }]. statusKey enables the tabs.
+function dataTable(mount, { columns, rows, exportName = 'export', statusKey = null }) {
+  const state = { filters: {}, sortKey: null, sortDir: 'asc', page: 1, pageSize: 10, tab: 'All' };
+  const txt = (c, r) => String((c.get ? c.get(r) : r[c.key]) ?? '');
+  const statuses = statusKey ? ['All', ...Array.from(new Set(rows.map((r) => String(r[statusKey] ?? '—'))))] : null;
+  const compute = () => {
+    let out = rows.slice();
+    if (statusKey && state.tab !== 'All') out = out.filter((r) => String(r[statusKey] ?? '—') === state.tab);
+    for (const c of columns) {
+      const q = (state.filters[c.key] || '').trim().toLowerCase();
+      if (q) out = out.filter((r) => txt(c, r).toLowerCase().includes(q));
+    }
+    if (state.sortKey) {
+      const c = columns.find((x) => x.key === state.sortKey);
+      if (c) { out.sort((a, b) => txt(c, a).localeCompare(txt(c, b), undefined, { numeric: true })); if (state.sortDir === 'desc') out.reverse(); }
+    }
+    return out;
+  };
+  mount.innerHTML = `
+    <div class="dt-bar">
+      ${statuses ? `<div class="dt-tabs">${statuses.map((s) => `<button class="btn sm dt-tab" data-tab="${esc(s)}">${esc(s)}</button>`).join('')}</div>` : '<div></div>'}
+      <button class="btn sm" id="dt-csv">Export CSV</button>
+    </div>
+    <div class="dt-showing" id="dt-showing"></div>
+    <div class="table-wrap"><table class="log">
+      <thead>
+        <tr>${columns.map((c) => `<th class="dt-sort" data-k="${esc(c.key)}" style="cursor:pointer;white-space:nowrap">${esc(c.label)}<span data-arrow="${esc(c.key)}"></span></th>`).join('')}</tr>
+        <tr>${columns.map((c) => c.filter === false ? '<th></th>' : `<th><input class="dt-filter" data-k="${esc(c.key)}" placeholder="Filter"></th>`).join('')}</tr>
+      </thead>
+      <tbody id="dt-body"></tbody>
+    </table></div>
+    <div class="dt-foot"><button class="btn sm" id="dt-prev">Prev</button><span id="dt-page"></span><button class="btn sm" id="dt-next">Next</button></div>`;
+  const body = mount.querySelector('#dt-body');
+  const refresh = () => {
+    const out = compute();
+    const totalPages = Math.max(1, Math.ceil(out.length / state.pageSize));
+    state.page = Math.min(state.page, totalPages);
+    const start = (state.page - 1) * state.pageSize;
+    const paged = out.slice(start, start + state.pageSize);
+    body.innerHTML = paged.length ? paged.map((r) => `<tr>${columns.map((c) => `<td>${c.html ? c.html(r) : esc(txt(c, r) || '—')}</td>`).join('')}</tr>`).join('')
+      : `<tr><td colspan="${columns.length}" class="empty">No results.</td></tr>`;
+    mount.querySelector('#dt-showing').textContent = out.length ? `Showing ${start + 1}-${Math.min(start + state.pageSize, out.length)} of ${out.length}` : 'No results';
+    mount.querySelector('#dt-page').textContent = ` Page ${state.page} of ${totalPages} `;
+    mount.querySelectorAll('[data-arrow]').forEach((el) => { el.textContent = el.dataset.arrow === state.sortKey ? (state.sortDir === 'asc' ? ' ▲' : ' ▼') : ''; });
+    mount.querySelectorAll('.dt-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === state.tab));
+  };
+  mount.querySelectorAll('.dt-sort').forEach((th) => { th.onclick = () => { const k = th.dataset.k; if (state.sortKey === k) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortKey = k; state.sortDir = 'asc'; } refresh(); }; });
+  mount.querySelectorAll('.dt-filter').forEach((inp) => { inp.oninput = () => { state.filters[inp.dataset.k] = inp.value; state.page = 1; refresh(); }; });
+  mount.querySelectorAll('.dt-tab').forEach((b) => { b.onclick = () => { state.tab = b.dataset.tab; state.page = 1; refresh(); }; });
+  mount.querySelector('#dt-csv').onclick = () => {
+    const out = compute();
+    const header = columns.map((c) => `"${c.label.replace(/"/g, '""')}"`).join(',');
+    const lines = out.map((r) => columns.map((c) => `"${txt(c, r).replace(/"/g, '""')}"`).join(','));
+    const blob = new Blob([[header, ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = exportName + '.csv'; a.click();
+  };
+  mount.querySelector('#dt-prev').onclick = () => { if (state.page > 1) { state.page--; refresh(); } };
+  mount.querySelector('#dt-next').onclick = () => { state.page++; refresh(); };
+  refresh();
+}
+
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
     headers: { 'Content-Type': 'application/json' },
@@ -534,21 +597,24 @@ views['/rth'] = async () => {
     <div class="page-head"><div><h1>Request to Hire — Log</h1>
       <p class="sub">Every request, compiled. Replaces the wide spreadsheet.</p></div>
       <button class="btn gold" id="new">+ New Request</button></div>
-    <div class="table-wrap"><table class="log">
-      <thead><tr><th>Candidate</th><th>Position</th><th>Role</th><th>Pay Rate</th><th>Access</th><th>HR</th><th>Finance</th><th>CEO</th><th>Status</th><th>Termination</th><th></th></tr></thead>
-      <tbody>${list.length ? list.map((r) => `<tr>
-        <td><strong>${esc(r.data.candidateName)}</strong></td>
-        <td>${esc(r.data.position || '—')}</td>
-        <td>${esc(r.roleName || 'Custom')}</td>
-        <td>${esc(r.data.payRate || '—')}</td>
-        <td><a href="#/rth/${r.id}">${(r.items || []).length} access</a></td>
-        <td>${sig(r, 'hr')}</td><td>${sig(r, 'finance')}</td><td>${sig(r, 'ceo')}</td>
-        <td><span class="pill ${r.status}">${esc(r.status.replace(/-/g, ' '))}</span></td>
-        <td>${esc(r.terminationDate ? monthDay(r.terminationDate) : '—')}</td>
-        <td><a href="#/rth/${r.id}">Open</a></td></tr>`).join('')
-      : `<tr><td colspan="11" class="empty">No requests yet.</td></tr>`}</tbody>
-    </table></div>`;
+    <div id="dt"></div>`;
   $('#new').onclick = () => go('/rth/new');
+  dataTable(view.querySelector('#dt'), {
+    rows: list, exportName: 'request-to-hire', statusKey: 'status',
+    columns: [
+      { key: 'candidate', label: 'Candidate', get: (r) => r.data.candidateName || '', html: (r) => `<strong>${esc(r.data.candidateName || '')}</strong>` },
+      { key: 'position', label: 'Position', get: (r) => r.data.position || '' },
+      { key: 'role', label: 'Role', get: (r) => r.roleName || 'Custom' },
+      { key: 'payRate', label: 'Pay Rate', get: (r) => r.data.payRate || '', filter: false },
+      { key: 'access', label: 'Access', get: (r) => String((r.items || []).length), html: (r) => `<a href="#/rth/${r.id}">${(r.items || []).length} access</a>`, filter: false },
+      { key: 'hr', label: 'HR', get: (r) => sig(r, 'hr'), filter: false },
+      { key: 'finance', label: 'Finance', get: (r) => sig(r, 'finance'), filter: false },
+      { key: 'ceo', label: 'CEO', get: (r) => sig(r, 'ceo'), filter: false },
+      { key: 'status', label: 'Status', get: (r) => r.status, html: (r) => `<span class="pill ${r.status}">${esc(r.status.replace(/-/g, ' '))}</span>` },
+      { key: 'termination', label: 'Termination', get: (r) => r.terminationDate ? monthDay(r.terminationDate) : '', filter: false },
+      { key: 'open', label: '', get: () => '', html: (r) => `<a href="#/rth/${r.id}">Open</a>`, filter: false },
+    ],
+  });
 };
 
 async function rthNew(prefillId) {
@@ -805,15 +871,16 @@ views['/log/:key'] = async (key) => {
   view.innerHTML = `
     <div class="page-head"><div><h1>${esc(log.title)} — Log</h1>
       <p class="sub">Every submission, compiled on one page.</p></div></div>
-    <div class="table-wrap"><table class="log">
-      <thead><tr><th>Candidate</th>${cols.map((f) => `<th>${esc(f.label)}</th>`).join('')}<th>Docs</th><th></th></tr></thead>
-      <tbody>${log.rows.length ? log.rows.map((r) => `<tr>
-        <td><strong>${esc(r.candidateName)}</strong></td>
-        ${cols.map((f) => { let v = r.data?.[f.key]; if (Array.isArray(v)) v = v.join(', '); return `<td>${esc(v || '—')}</td>`; }).join('')}
-        <td>${fileFields.filter((f) => r.data?.[f.key]).length || '—'}</td>
-        <td><a href="#/submission/${r.submissionId}">Open</a></td></tr>`).join('')
-      : `<tr><td colspan="${cols.length + 3}" class="empty">No submissions yet.</td></tr>`}</tbody>
-    </table></div>`;
+    <div id="dt"></div>`;
+  dataTable(view.querySelector('#dt'), {
+    rows: log.rows, exportName: 'compliance-' + key,
+    columns: [
+      { key: 'candidate', label: 'Candidate', get: (r) => r.candidateName || '', html: (r) => `<strong>${esc(r.candidateName || '')}</strong>` },
+      ...cols.map((f) => ({ key: f.key, label: f.label, get: (r) => { let v = r.data?.[f.key]; if (Array.isArray(v)) v = v.join(', '); return v || ''; } })),
+      { key: 'docs', label: 'Docs', get: (r) => String(fileFields.filter((f) => r.data?.[f.key]).length || ''), filter: false },
+      { key: 'open', label: '', get: () => '', html: (r) => `<a href="#/submission/${r.submissionId}">Open</a>`, filter: false },
+    ],
+  });
 };
 
 // --- router -----------------------------------------------------------------
