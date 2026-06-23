@@ -513,6 +513,27 @@ api.post('/rth', (req, res) => {
   res.status(201).json(db.insert('accessRequests', { candidateId: linked?.id || null, data: finalData, roleId, roleName: role?.name, signatures, items, status: 'awaiting-signatures' }));
 });
 
+// Edit the requested permissions/access BEFORE approval — usable by HR (Gina) or
+// the hiring manager, in any order (the RTH isn't filled in a fixed sequence).
+api.post('/rth/:id/permissions', (req, res) => {
+  const r = db.get('accessRequests', req.params.id);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  if (r.status !== 'awaiting-signatures') {
+    return res.status(409).json({ error: 'Permissions can only be edited before the request is approved.' });
+  }
+  const def = db.find('formDefinitions', (d) => d.isRTH);
+  const { accessItems, roleId } = req.body;
+  const items = (accessItems || [])
+    .map((key) => {
+      const item = def.accessCatalog.find((a) => a.key === key);
+      if (!item) return null;
+      return { key, label: item.label, dept: def.departments[item.dept] || item.dept, kind: item.kind || 'software', status: 'requested' };
+    })
+    .filter(Boolean);
+  const role = roleId ? db.get('accessRoles', roleId) : null;
+  res.json(db.update('accessRequests', r.id, { items, roleId: roleId ?? r.roleId, roleName: role ? role.name : r.roleName }));
+});
+
 // Access-item owners: when an approved RTH includes one of these items, the owner
 // is auto-emailed the (salary-free) permissions PDF + a link to mark it provisioned.
 // Emails DERIVED from the names HR provided ({first-initial}{lastname}@optimaed.com,

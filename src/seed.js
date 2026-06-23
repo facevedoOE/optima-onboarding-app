@@ -265,7 +265,7 @@ const requestToHire = {
     { key: 'startDate', label: 'Start Date', type: 'date', required: true },
     { key: 'reportsTo', label: 'Reports To', type: 'text', required: true },
     { key: 'payRate', label: 'Pay Rate', type: 'text', required: true },
-    { key: 'email', label: 'Work Email (proposed)', type: 'email' },
+    { key: 'email', label: 'Email', type: 'email' },
     { key: 'phone', label: 'Phone', type: 'tel' },
     // "Specify" line items from the Adobe permissions form — rendered after the access list.
     { key: 'softwareOther', label: 'Other software (please specify)', type: 'text', section: 'access' },

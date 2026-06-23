@@ -369,15 +369,15 @@ views['/candidate/:id'] = async (id) => {
       <p class="sub">${esc(c.position || '—')} · ${esc(c.employeeType || '')} · starts ${esc(monthDay(c.startDate) || '—')}</p></div>
       <button class="btn ghost" id="sendLink">${c.portalLinkSentAt ? 'Resend' : 'Send'} portal link</button>
     </div>
-    <h2>Onboarding checklist</h2>
-    ${checklistHtml(c.checklist, true)}
-    <h2 style="margin-top:24px">Access &amp; Hiring</h2>
+    <h2>Access &amp; Hiring</h2>
     ${c.rth
       ? `<div class="row"><div><div class="t">Request to Hire</div><div class="d">${esc(c.rth.roleName || 'Custom access')}</div></div>
           <div style="display:flex;gap:10px;align-items:center"><span class="pill ${c.rth.status}">${esc(c.rth.status.replace(/-/g, ' '))}</span>
           <a class="btn ghost sm" href="#/rth/${c.rth.id}">Open</a></div></div>`
       : `<div class="row"><div><div class="t">Request to Hire</div><div class="d">No request yet for this candidate.</div></div>
           <button class="btn sm" id="newRth">Create Request to Hire</button></div>`}
+    <h2 style="margin-top:24px">Onboarding checklist</h2>
+    ${checklistHtml(c.checklist, true)}
     <h2 style="margin-top:24px;display:flex;align-items:center;justify-content:space-between;gap:12px">References
       ${(c.references || []).some((r) => r.status !== 'received') ? `<button class="btn ghost sm" id="refRemind">Send reminders to pending</button>` : ''}</h2>
     ${(c.references || []).length
@@ -672,10 +672,18 @@ views['/rth/new'] = () => rthNew(null);
 views['/rth/new/:cid'] = (cid) => rthNew(cid);
 
 views['/rth/:id'] = async (id) => {
-  const r = await api('/rth/' + id);
+  const [r, def, roles] = await Promise.all([api('/rth/' + id), api('/forms/request-to-hire'), api('/roles')]);
   const firstPending = r.signatures.findIndex((s) => !s.signedAt);
   const itemsByDept = {};
   for (const it of r.items) (itemsByDept[it.dept] = itemsByDept[it.dept] || []).push(it);
+  const alphaL = (a, b) => String(a.label).localeCompare(String(b.label));
+  const accessGroups = [
+    ['Software & Products', def.accessCatalog.filter((it) => it.kind !== 'hardware').sort(alphaL)],
+    ['Equipment', def.accessCatalog.filter((it) => it.kind === 'hardware').sort(alphaL)],
+  ];
+  const rolesAlpha = [...roles].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const rolesById = Object.fromEntries(roles.map((rr) => [rr.id, rr]));
+  const currentKeys = (r.items || []).map((i) => i.key);
   view.innerHTML = `
     <div class="crumb"><a href="#/rth">Request to Hire</a> › ${esc(r.data.candidateName)}</div>
     <div class="page-head"><div><h1>${esc(r.data.candidateName)}</h1>
@@ -694,7 +702,16 @@ views['/rth/:id'] = async (id) => {
       ${r.status === 'approved' || r.status === 'provisioning' || r.status === 'complete'
         ? `<a class="btn ghost sm" style="margin-top:12px" href="/api/rth/${id}/pdf" target="_blank">View signed PDF</a>` : ''}
       </div>
-      <div><h2>Access provisioning</h2><div class="card">
+      <div>
+      ${r.status === 'awaiting-signatures' ? `<h2>Permissions</h2><div class="card">
+        <div class="note">Set permissions any time before approval — HR or the hiring manager, in any order.</div>
+        <div class="field"><label>Role (pre-fills a bundle)</label><select id="permRole"><option value="">Custom…</option>
+          ${rolesAlpha.map((rr) => `<option value="${rr.id}" ${rr.id === r.roleId ? 'selected' : ''}>${esc(rr.name)}</option>`).join('')}</select></div>
+        ${accessGroups.map(([title, gitems]) => gitems.length ? `<div class="dept-group"><h4>${esc(title)}</h4>
+          <div class="check-grid">${gitems.map((it) => `<label class="chk"><input type="checkbox" name="perm" value="${it.key}" ${currentKeys.includes(it.key) ? 'checked' : ''}> ${esc(it.label)}</label>`).join('')}</div></div>` : '').join('')}
+        <button class="btn sm" id="savePerms">Save permissions</button>
+      </div>` : ''}
+      <h2>Access provisioning</h2><div class="card">
         ${r.status === 'awaiting-signatures' ? '<div class="note">Provisioning unlocks once all signatures are complete.</div>' : ''}
         ${Object.entries(itemsByDept).map(([d, items]) => `<div class="dept-group"><h4>${esc(d)}</h4>
           ${items.map((it) => {
@@ -724,6 +741,17 @@ views['/rth/:id'] = async (id) => {
       </div>` : ''}
       </div>
     </div>`;
+  const permRole = $('#permRole');
+  if (permRole) permRole.onchange = (e) => {
+    const role = rolesById[e.target.value];
+    view.querySelectorAll('input[name="perm"]').forEach((cb) => { cb.checked = role ? role.defaults.includes(cb.value) : false; });
+  };
+  const savePerms = $('#savePerms');
+  if (savePerms) savePerms.onclick = async () => {
+    const accessItems = [...view.querySelectorAll('input[name="perm"]:checked')].map((cb) => cb.value);
+    try { await api('/rth/' + id + '/permissions', { method: 'POST', body: { accessItems, roleId: $('#permRole').value || null } }); toast('Permissions saved'); views['/rth/:id'](id); }
+    catch (err) { toast(err.message); }
+  };
   view.querySelectorAll('[data-sign]').forEach((b) => b.onclick = async () => {
     // The server records the signed-in user as the approver (and enforces role).
     try { await api('/rth/' + id + '/sign', { method: 'POST', body: { stepKey: b.dataset.sign } }); toast('Signed'); views['/rth/:id'](id); }
