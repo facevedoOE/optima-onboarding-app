@@ -30,6 +30,7 @@ function fileNameFor(sub, candidate) {
 }
 
 async function main() {
+  await db.init(); // load the store (Postgres or file) before reading it
   // Pre-flight: warn loudly if this run won't actually reach SharePoint.
   if (!config.live) {
     console.warn('⚠️  DEMO mode (no Entra creds) — filing is stubbed/logged, nothing reaches SharePoint. Set TENANT_ID/CLIENT_ID/CLIENT_SECRET to file for real.');
@@ -77,6 +78,7 @@ async function main() {
   console.log(`\nDone. ${DRY ? 'Would file' : 'Filed'}: ${counts.filed}` +
     (counts.missingPdf ? ` · missing PDF: ${counts.missingPdf}` : '') +
     (counts.failed ? ` · failed: ${counts.failed}` : ''));
+  await db.flush(); // ensure any activity-log writes land before exit
   if (counts.failed) process.exitCode = 1;
 }
 

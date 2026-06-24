@@ -7,8 +7,8 @@
   "scripts": {
     "start": "node server.js",
     "seed": "node src/seed.js",
-    "seed:config": "node -e \"import('./src/seed.js').then(m => m.seedConfig())\"",
-    "seed:new-hires": "node -e \"import('./src/seed.js').then(m => m.seedNewHires())\"",
+    "seed:config": "node -e \"import('./src/db.js').then(async ({db}) => { await db.init(); const m = await import('./src/seed.js'); m.seedConfig(); await db.flush(); process.exit(0); })\"",
+    "seed:new-hires": "node -e \"import('./src/db.js').then(async ({db}) => { await db.init(); const m = await import('./src/seed.js'); m.seedNewHires(); await db.flush(); process.exit(0); })\"",
     "backfill:sharepoint": "node src/backfill-sharepoint.js"
   },
   "engines": {
@@ -19,6 +19,7 @@
     "express": "^4.21.2",
     "express-session": "^1.19.0",
     "pdf-lib": "^1.17.1",
+    "pg": "^8.22.0",
     "session-file-store": "^1.5.0"
   }
 }

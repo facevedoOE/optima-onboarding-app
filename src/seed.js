@@ -422,5 +422,7 @@ export function seedDemo() {
 
 // Direct run (`npm run seed`) loads the full demo dataset.
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  await db.init();
   seedDemo();
+  await db.flush();
 }

@@ -56,6 +56,9 @@ app.use(express.static(join(__dirname, 'public')));
 app.use('/templates', express.static(join(__dirname, 'templates')));
 app.get('*', (_req, res) => res.sendFile(join(__dirname, 'public', 'index.html')));
 
+// Load the store (Postgres or JSON file) before serving any request.
+await db.init();
+
 // Seed on first run. In live mode we ONLY seed configuration (form definitions +
 // access roles) — never demo candidates. In demo mode we load the full dataset.
 if (db.all('formDefinitions').length === 0) {

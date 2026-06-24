@@ -79,12 +79,22 @@ have that, this part goes to Marvin/IT.
 - **Configuration → General settings → ARR affinity = On** (sessions + the JSON
   store are file-based, so keep it to a **single instance** / sticky — see Data note below).
 
+### 2a-bis. Database (Azure Database for PostgreSQL — matches the rest of Optima)
+- Azure portal → **Azure Database for PostgreSQL → Flexible Server → Create**, in the same resource group.
+- A **Burstable B1ms** tier (~$12–15/mo) is plenty for this app.
+- Create a database (e.g. `onboarding`), note the admin user/password and host.
+- **Networking:** allow the Web App to reach it — either "Allow public access from Azure services" or add the Web App's outbound IPs.
+- Build the connection string for `DATABASE_URL` (App Service requires SSL):
+  `postgresql://<user>:<password>@<host>:5432/onboarding?sslmode=require`
+- That's all the app needs — on first boot it **auto-creates its `store` table**; no manual migration. (Leave `DATABASE_URL` unset to run on the JSON file store instead — fine for a quick single-instance launch, but no backups.)
+
 ### 2b. Application settings (env vars — NOT a committed .env)
 Set these under **Configuration → Application settings** (they map 1:1 to the
 `.env` template in this repo). Do **not** deploy a real `.env` to the server:
 
 | Setting | Value |
 |---|---|
+| `DATABASE_URL` | the PostgreSQL connection string from §2a-bis. **Omit it and the app falls back to the local JSON file store** (single instance, no backups). |
 | `TENANT_ID` | from Part 1 |
 | `CLIENT_ID` | from Part 1 |
 | `CLIENT_SECRET` | from Part 1 |
