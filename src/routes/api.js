@@ -562,7 +562,6 @@ const PERMISSIONS_RECIPIENTS = [
 // ...plus an item-specific recipient when that item is currently selected OR was
 // just removed (so they hear about both the grant and the removal).
 const PERMISSIONS_ITEM_RECIPIENTS = {
-  ramp: 'lyattaw@optimaed.com', // Ramp Card → Lisa Marie Yattaw
   llm: 'facevedo@optimaed.com', // LLM / AI → Francine
 };
 

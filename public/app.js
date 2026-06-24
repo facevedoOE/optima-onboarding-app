@@ -664,6 +664,7 @@ async function rthNew(kind, prefillId) {
     setField('candidateName', `${c.firstName} ${c.lastName}`);
     setField('position', c.position); setField('employeeType', c.employeeType);
     setField('startDate', c.startDate); setField('email', c.email);
+    if (c.reportsTo) setField('reportsTo', c.reportsTo);
   };
   $('#candidate').onchange = (e) => applyCandidate(candsById[e.target.value]);
   if (prefillId) applyCandidate(candsById[prefillId]);

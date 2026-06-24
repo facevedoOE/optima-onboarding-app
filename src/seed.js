@@ -7,7 +7,9 @@
 // (or in the in-app Form Builder) — no recreating PDFs, no re-linking, no flow
 // surgery.
 // ---------------------------------------------------------------------------
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { readFileSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { db } from './db.js';
 
 // Reusable field-type reference (what the renderer understands):
@@ -299,7 +301,6 @@ const accessCatalog = [
   { key: 'google', label: 'Google Docs', dept: 'IT', kind: 'software' },
   { key: 'llm', label: 'LLM / AI Tools', dept: 'IT', kind: 'software' },
   { key: 'jira', label: 'Jira', dept: 'IT', kind: 'software' },
-  { key: 'ramp', label: 'Ramp Card', dept: 'FIN', kind: 'software' },
   { key: 'quickbooks', label: 'Quickbooks', dept: 'FIN', kind: 'software' },
   { key: 'paychex', label: 'Paychex', dept: 'FIN', kind: 'software' },
   { key: 'adobe', label: 'Adobe', dept: 'MKT', kind: 'software' },
@@ -381,6 +382,25 @@ const demoCandidates = [
 ];
 
 // --- Seeders -----------------------------------------------------------------
+// seedNewHires: pre-load real new hires from data/new-hires.json. That file is
+// GITIGNORED on purpose — it holds personal emails, so it is never committed to
+// this public repo (provide it on the server out-of-band). Everyone reports to
+// Kim Abel. Salary is intentionally NOT stored on the candidate (it belongs on
+// the Leadership request). Idempotent: skips emails already present.
+export function seedNewHires() {
+  const file = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'new-hires.json');
+  if (!existsSync(file)) { console.log('No data/new-hires.json found — nothing to pre-load.'); return; }
+  const roster = JSON.parse(readFileSync(file, 'utf8'));
+  const existing = new Set(db.all('candidates').map((c) => (c.email || '').toLowerCase()));
+  let added = 0;
+  for (const h of roster) {
+    if (!h.email || existing.has(h.email.toLowerCase())) continue;
+    db.insert('candidates', { ...h, reportsTo: h.reportsTo || 'Kim Abel', status: h.status || 'In Progress', createdAt: new Date().toISOString() });
+    added++;
+  }
+  console.log(`Seeded new hires: ${added} added, ${roster.length - added} skipped (already present or no email).`);
+}
+
 // seedConfig: the real configuration the app needs to function (form definitions
 // + access roles). Safe to run in LIVE mode on an empty store — it adds NO fake
 // candidates and does NOT wipe existing data.
