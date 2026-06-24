@@ -321,8 +321,13 @@ views['/'] = async () => {
   view.innerHTML = `
     <div class="page-head">
       <div><h1>Candidates</h1><p class="sub">Everyone currently moving through onboarding.</p></div>
-      <button class="btn gold" id="newCand">+ New Candidate</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn" id="importCand">⬆ Import CSV</button>
+        <button class="btn gold" id="newCand">+ New Candidate</button>
+        <input type="file" id="importFile" accept=".csv,text/csv" style="display:none">
+      </div>
     </div>
+    <div class="note" style="margin-bottom:12px">Bulk add: export your new-hire spreadsheet as <strong>CSV</strong> and click <strong>Import CSV</strong>. Columns are auto-matched (Name, Email, Job Title, Grade/Level, Start date). Duplicates (same email) are skipped. Mailing addresses can be added per person afterward.</div>
     <div class="grid g3">
       ${cands.length ? cands.map((c) => {
         const pct = c.progress.total ? Math.round((c.progress.done / c.progress.total) * 100) : 0;
@@ -335,6 +340,19 @@ views['/'] = async () => {
       }).join('') : `<div class="empty">No candidates yet. Add your first one.</div>`}
     </div>`;
   $('#newCand').onclick = () => go('/candidate/new');
+  const importFile = $('#importFile');
+  $('#importCand').onclick = () => importFile.click();
+  importFile.onchange = async () => {
+    const file = importFile.files[0];
+    if (!file) return;
+    try {
+      const csv = await file.text();
+      const r = await api('/candidates/import', { method: 'POST', body: { csv } });
+      toast(`Imported ${r.added} candidate${r.added === 1 ? '' : 's'}${r.skipped ? ` · ${r.skipped} skipped (duplicate/blank)` : ''}`);
+      views['/']();
+    } catch (err) { toast('Import failed: ' + err.message); }
+    finally { importFile.value = ''; }
+  };
   view.querySelectorAll('.card.click').forEach((el) => el.onclick = () => go('/candidate/' + el.dataset.id));
 };
 

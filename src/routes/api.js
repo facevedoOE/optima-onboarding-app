@@ -317,6 +317,71 @@ api.post('/candidates', (req, res) => {
   }));
 });
 
+// Minimal RFC-4180-ish CSV parser (handles quoted fields, embedded commas/newlines).
+function parseCsv(text) {
+  const rows = []; let row = [], field = '', inQ = false;
+  text = String(text).replace(/\r\n?/g, '\n');
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+      else field += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+    else field += ch;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((c) => String(c).trim() !== ''));
+}
+
+// Bulk-import candidates from an uploaded CSV. Columns are auto-matched by header;
+// rows with a duplicate email (or no name) are skipped. Salary columns are ignored.
+api.post('/candidates/import', async (req, res) => {
+  const csv = req.body?.csv;
+  if (typeof csv !== 'string' || !csv.trim()) return res.status(400).json({ error: 'No CSV provided' });
+  const rows = parseCsv(csv);
+  if (rows.length < 2) return res.status(400).json({ error: 'CSV has a header but no data rows' });
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const headers = rows[0].map(norm);
+  const col = (...names) => { for (const n of names) { const i = headers.findIndex((h) => h === n || h.includes(n)); if (i !== -1) return i; } return -1; };
+  const idx = {
+    name: col('name'), first: col('first name', 'first'), last: col('last name', 'last'),
+    email: col('email', 'e-mail'), title: col('job title', 'position', 'role', 'title'),
+    grade: col('grade', 'level', 'school'), type: col('employee type', 'employment'),
+    start: col('start date', 'start'), reports: col('reports to', 'manager', 'supervisor'),
+    address: col('mailing address', 'address'),
+  };
+  const cell = (r, i) => (i >= 0 && i < r.length ? String(r[i]).trim() : '');
+  const toISO = (s) => { if (!s) return ''; const d = new Date(s); return isNaN(d.getTime()) ? s : d.toISOString().slice(0, 10); };
+  const existing = new Set(db.all('candidates').map((c) => norm(c.email)));
+  let added = 0, skipped = 0; const created = [];
+  for (const r of rows.slice(1)) {
+    let firstName = cell(r, idx.first), lastName = cell(r, idx.last);
+    if (!firstName && !lastName && idx.name >= 0) { const p = cell(r, idx.name).split(/\s+/); firstName = p.shift() || ''; lastName = p.join(' '); }
+    if (!firstName && !lastName) { skipped++; continue; }
+    const email = cell(r, idx.email);
+    if (email && existing.has(norm(email))) { skipped++; continue; }
+    const grade = cell(r, idx.grade), title = cell(r, idx.title);
+    const position = title && grade ? `${title} (${grade})` : (title || grade || '');
+    let employeeType = cell(r, idx.type);
+    if (!employeeType && grade) employeeType = /school/i.test(grade) ? 'Optima Academy Online — Full-Time' : 'OptimaEd (Corporate)';
+    const c = db.insert('candidates', {
+      firstName, lastName, email, position, employeeType,
+      startDate: toISO(cell(r, idx.start)),
+      reportsTo: cell(r, idx.reports) || undefined,
+      mailingAddress: cell(r, idx.address) || undefined,
+      status: 'In Progress',
+      activity: [{ at: nowISO(), kind: 'created', message: 'Imported via bulk CSV upload' }],
+    });
+    if (email) existing.add(norm(email));
+    created.push(`${c.firstName} ${c.lastName}`);
+    added++;
+  }
+  await db.flush(); // make sure imported rows are persisted before responding
+  res.json({ added, skipped, created });
+});
+
 api.get('/candidates/:id', (req, res) => {
   const c = db.get('candidates', req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
