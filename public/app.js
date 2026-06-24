@@ -704,12 +704,16 @@ views['/rth/:id'] = async (id) => {
       </div>
       <div>
       ${r.status === 'awaiting-signatures' ? `<h2>Permissions</h2><div class="card">
-        <div class="note">Set permissions any time before approval — HR or the hiring manager, in any order.</div>
+        <div class="note">Set permissions any time before approval — HR or the hiring manager, in any order. <strong>Save</strong> keeps a draft; <strong>Submit &amp; send</strong> emails the access team. Re-submitting after a change notifies them only of what was added or removed.</div>
         <div class="field"><label>Role (pre-fills a bundle)</label><select id="permRole"><option value="">Custom…</option>
           ${rolesAlpha.map((rr) => `<option value="${rr.id}" ${rr.id === r.roleId ? 'selected' : ''}>${esc(rr.name)}</option>`).join('')}</select></div>
         ${accessGroups.map(([title, gitems]) => gitems.length ? `<div class="dept-group"><h4>${esc(title)}</h4>
           <div class="check-grid">${gitems.map((it) => `<label class="chk"><input type="checkbox" name="perm" value="${it.key}" ${currentKeys.includes(it.key) ? 'checked' : ''}> ${esc(it.label)}</label>`).join('')}</div></div>` : '').join('')}
-        <button class="btn sm" id="savePerms">Save permissions</button>
+        <div class="row-actions" style="margin-top:6px">
+          <button class="btn sm ghost" id="savePerms">Save draft</button>
+          <button class="btn sm" id="submitPerms">Submit &amp; send</button>
+        </div>
+        ${r.lastNotifiedAt ? `<div class="help" style="margin-top:6px">Last sent ${fmtET(r.lastNotifiedAt)}.</div>` : ''}
       </div>` : ''}
       <h2>Access provisioning</h2><div class="card">
         ${r.status === 'awaiting-signatures' ? '<div class="note">Provisioning unlocks once all signatures are complete.</div>' : ''}
@@ -749,8 +753,19 @@ views['/rth/:id'] = async (id) => {
   const savePerms = $('#savePerms');
   if (savePerms) savePerms.onclick = async () => {
     const accessItems = [...view.querySelectorAll('input[name="perm"]:checked')].map((cb) => cb.value);
-    try { await api('/rth/' + id + '/permissions', { method: 'POST', body: { accessItems, roleId: $('#permRole').value || null } }); toast('Permissions saved'); views['/rth/:id'](id); }
+    try { await api('/rth/' + id + '/permissions', { method: 'POST', body: { accessItems, roleId: $('#permRole').value || null } }); toast('Draft saved'); views['/rth/:id'](id); }
     catch (err) { toast(err.message); }
+  };
+  const submitPerms = $('#submitPerms');
+  if (submitPerms) submitPerms.onclick = async () => {
+    const accessItems = [...view.querySelectorAll('input[name="perm"]:checked')].map((cb) => cb.value);
+    try {
+      const out = await api('/rth/' + id + '/permissions/submit', { method: 'POST', body: { accessItems, roleId: $('#permRole').value || null } });
+      if (!out.sent) toast(out.message || 'No changes — nobody emailed');
+      else if (out.firstSend) toast(`Permissions sent to ${out.recipientCount} recipient${out.recipientCount === 1 ? '' : 's'}`);
+      else toast(`Update sent (${out.added} added, ${out.removed} removed) to ${out.recipientCount}`);
+      views['/rth/:id'](id);
+    } catch (err) { toast(err.message); }
   };
   view.querySelectorAll('[data-sign]').forEach((b) => b.onclick = async () => {
     // The server records the signed-in user as the approver (and enforces role).

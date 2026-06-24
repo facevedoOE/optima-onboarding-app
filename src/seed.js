@@ -313,11 +313,10 @@ const accessCatalog = [
   { key: 'nearpod', label: 'Nearpod', dept: 'ACA', kind: 'software' },
   { key: 'formative', label: 'Formative', dept: 'ACA', kind: 'software' },
   { key: 'iready', label: 'iReady', dept: 'ACA', kind: 'software' },
-  { key: 'focus', label: 'Focus (SIS)', dept: 'ACA', kind: 'software' },
+  { key: 'focus', label: 'Focus', dept: 'ACA', kind: 'software' },
   { key: 'terms', label: 'TERMS', dept: 'ACA', kind: 'software' },
   { key: 'wiris', label: 'Wiris', dept: 'ACA', kind: 'software' },
   { key: 'genius', label: 'Genius', dept: 'ACA', kind: 'software' },
-  { key: 'arthur', label: 'Arthur', dept: 'ACA', kind: 'software' },
   { key: 'jstor', label: 'JSTOR', dept: 'ACA', kind: 'software' },
   { key: 'optimaxr', label: 'OptimaXR', dept: 'ACA', kind: 'software' },
   // Hardware

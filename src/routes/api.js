@@ -534,56 +534,107 @@ api.post('/rth/:id/permissions', (req, res) => {
   res.json(db.update('accessRequests', r.id, { items, roleId: roleId ?? r.roleId, roleName: role ? role.name : r.roleName }));
 });
 
-// Access-item owners: when an approved RTH includes one of these items, the owner
-// is auto-emailed the (salary-free) permissions PDF + a link to mark it provisioned.
-// Emails DERIVED from the names HR provided ({first-initial}{lastname}@optimaed.com,
-// matching amangana/mcorea) — VERIFY before relying in production. HubSpot + others TBD.
-const ACCESS_OWNERS = {
-  microsoft: ['mcorea@optimaed.com'],                       // Marvin Corea — IT
-  llm: ['mcorea@optimaed.com', 'facevedo@optimaed.com'],    // Marvin Corea & Francine — IT
-  google: ['lbristow@optimaed.com'],                        // Lorin Bristow — Marketing
-  jira: ['lbristow@optimaed.com'],                          // Lorin Bristow — Marketing
-  ramp: ['lyattaw@optimaed.com'],                           // Lisa Marie Yattaw — Finance
-  paychex: ['gfalcone@optimaed.com'],                       // Gina Falcone — HR
-  quickbooks: ['lbernard@optimaed.com'],                    // Lisa Bernard — Finance
-  adobe: ['mcorea@optimaed.com'],                           // Marvin Corea — IT
-  canva: ['lbristow@optimaed.com'],                         // Lorin Bristow — Marketing
-  wordpress: ['lbristow@optimaed.com'],                     // Lorin Bristow — Marketing
-  istock: ['lbristow@optimaed.com'],                        // Lorin Bristow — Marketing
-  endorsal: ['lbristow@optimaed.com'],                      // Lorin Bristow — Marketing
-  adobecc: ['lbristow@optimaed.com'],                       // Adobe Creative Suite — Lorin Bristow — Marketing
-  // hubspot: [],                                           // TBD — HR to provide
-  envato: ['lbristow@optimaed.com'],                        // Lorin Bristow — Marketing
-  pictory: ['lbristow@optimaed.com'],                       // Lorin Bristow — Marketing
-  meta: ['lbristow@optimaed.com'],                          // Lorin Bristow — Marketing
-  laptop: ['tgriffin@optimaed.com'],                        // Trae Griffin — Equipment
-  mouse: ['tgriffin@optimaed.com'],                         // Trae Griffin — Equipment
-  monitor: ['tgriffin@optimaed.com'],                       // Trae Griffin — Equipment
-  pen: ['tgriffin@optimaed.com'],                           // Trae Griffin — Equipment (Logitech Pen)
+// ── Permissions-email distribution ──────────────────────────────────────────
+// Every permissions email goes to this fixed group...
+const PERMISSIONS_RECIPIENTS = [
+  'smurphy@optimaed.com',  // Stephanie Murphy
+  'mbattle@optimaed.com',  // Meghan Battle
+  'tgriffin@optimaed.com', // Trae Griffin
+  'tgoolsby@optimaed.com', // Tyler Goolsby
+  'mcorea@optimaed.com',   // Marvin Corea
+  'tshang@optimaed.com',   // Tina Shang
+];
+// ...plus an item-specific recipient when that item is currently selected OR was
+// just removed (so they hear about both the grant and the removal).
+const PERMISSIONS_ITEM_RECIPIENTS = {
+  ramp: 'lyattaw@optimaed.com', // Ramp Card → Lisa Marie Yattaw
+  llm: 'facevedo@optimaed.com', // LLM / AI → Francine
 };
 
-// Notify each access-item owner that an approved RTH needs their provisioning.
-async function notifyAccessOwners(rth) {
-  const byEmail = {}; // email -> [item labels]
-  for (const item of rth.items || []) {
-    for (const email of ACCESS_OWNERS[item.key] || []) {
-      (byEmail[email] = byEmail[email] || []).push(item.label || item.key);
-    }
+function permissionsRecipients(currentKeys, changedKeys = []) {
+  const set = new Set(PERMISSIONS_RECIPIENTS);
+  for (const [key, email] of Object.entries(PERMISSIONS_ITEM_RECIPIENTS)) {
+    if (currentKeys.includes(key) || changedKeys.includes(key)) set.add(email);
   }
+  return [...set];
+}
+
+function labelForKey(key) {
+  const def = db.find('formDefinitions', (d) => d.isRTH);
+  return def?.accessCatalog.find((a) => a.key === key)?.label || key;
+}
+
+// Email the distribution list the requested permissions. On a resend, the email
+// highlights what was Added / Removed since the last send. One mail per recipient
+// (keeps the list private). Best-effort.
+async function sendPermissionsEmail({ rth, recipients, added = [], removed = [], firstSend = true }) {
+  const who = rth.data?.candidateName || 'a new hire';
   const rthLink = `${config.baseUrl}/#/rth/${rth.id}`;
-  const pdfLink = `${config.baseUrl}/api/provisioner/rth/${rth.id}/pdf`;
-  for (const [email, labels] of Object.entries(byEmail)) {
-    await notify.email({
-      to: email,
-      candidateId: rth.candidateId || undefined,
-      subject: `Action needed: provision access for ${rth.data?.candidateName || 'a new hire'}`,
-      html: `<p>An approved Request to Hire needs you to provision:</p>
-        <ul>${labels.map((l) => `<li>${l}</li>`).join('')}</ul>
-        <p><a href="${pdfLink}">View the access summary (PDF — no salary info)</a></p>
-        <p>Once you've granted access, <a href="${rthLink}">mark it provisioned here</a>.</p>`,
-    }).catch(() => {});
+  const currentList = (rth.items || []).map((i) => `<li>${i.label}</li>`).join('') || '<li><em>none</em></li>';
+  const deltaHtml = firstSend ? '' :
+    `${added.length ? `<p><strong>Added:</strong> ${added.map(labelForKey).join(', ')}</p>` : ''}` +
+    `${removed.length ? `<p><strong>Removed:</strong> ${removed.map(labelForKey).join(', ')}</p>` : ''}`;
+  const subject = firstSend ? `Permissions requested for ${who}` : `Permissions updated for ${who}`;
+  const html = `<p>${firstSend ? 'A Request to Hire lists the following access for' : 'The requested access was updated for'} <strong>${who}</strong>:</p>
+    ${deltaHtml}
+    <p>Current access:</p>
+    <ul>${currentList}</ul>
+    <p><a href="${rthLink}">Open the Request to Hire</a></p>`;
+  for (const to of recipients) {
+    await notify.email({ to, candidateId: rth.candidateId || undefined, subject, html }).catch(() => {});
   }
 }
+
+// On approval, tell the distribution list the access is approved to provision.
+async function notifyAccessOwners(rth) {
+  const who = rth.data?.candidateName || 'a new hire';
+  const rthLink = `${config.baseUrl}/#/rth/${rth.id}`;
+  const pdfLink = `${config.baseUrl}/api/provisioner/rth/${rth.id}/pdf`;
+  const html = `<p>An approved Request to Hire is ready to provision for <strong>${who}</strong>:</p>
+    <ul>${(rth.items || []).map((i) => `<li>${i.label}</li>`).join('') || '<li><em>none</em></li>'}</ul>
+    <p><a href="${pdfLink}">View the access summary (PDF — no salary info)</a> · <a href="${rthLink}">mark items provisioned</a></p>`;
+  for (const to of permissionsRecipients((rth.items || []).map((i) => i.key))) {
+    await notify.email({ to, candidateId: rth.candidateId || undefined, subject: `Approved — provision access for ${who}`, html }).catch(() => {});
+  }
+}
+
+// Submit the permissions and email the distribution list. A resend only notifies
+// people if items were added or removed since the last send (no-op otherwise).
+// Usable by HR (Gina) or the hiring manager, any number of times, before approval.
+api.post('/rth/:id/permissions/submit', async (req, res) => {
+  const r = db.get('accessRequests', req.params.id);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  if (r.status !== 'awaiting-signatures') {
+    return res.status(409).json({ error: 'Permissions can only be sent before the request is approved.' });
+  }
+  const def = db.find('formDefinitions', (d) => d.isRTH);
+  const { accessItems, roleId } = req.body;
+  const items = (accessItems || [])
+    .map((key) => {
+      const item = def.accessCatalog.find((a) => a.key === key);
+      if (!item) return null;
+      return { key, label: item.label, dept: def.departments[item.dept] || item.dept, kind: item.kind || 'software', status: 'requested' };
+    })
+    .filter(Boolean);
+  const role = roleId ? db.get('accessRoles', roleId) : null;
+  const updated = db.update('accessRequests', r.id, { items, roleId: roleId ?? r.roleId, roleName: role ? role.name : r.roleName });
+
+  const currentKeys = items.map((i) => i.key);
+  const firstSend = r.lastNotifiedItemKeys === undefined || r.lastNotifiedItemKeys === null;
+  const prev = r.lastNotifiedItemKeys || [];
+  const added = currentKeys.filter((k) => !prev.includes(k));
+  const removed = prev.filter((k) => !currentKeys.includes(k));
+
+  // Resend with no change → notify nobody.
+  if (!firstSend && added.length === 0 && removed.length === 0) {
+    return res.json({ sent: false, message: 'No changes since the last send — nobody was emailed.', ...db.get('accessRequests', r.id) });
+  }
+
+  const recipients = permissionsRecipients(currentKeys, [...added, ...removed]);
+  await sendPermissionsEmail({ rth: updated, recipients, added, removed, firstSend });
+  db.update('accessRequests', r.id, { lastNotifiedItemKeys: currentKeys, lastNotifiedAt: nowISO() });
+  res.json({ sent: true, recipientCount: recipients.length, added: added.length, removed: removed.length, firstSend, ...db.get('accessRequests', r.id) });
+});
 
 api.post('/rth/:id/sign', async (req, res) => {
   const { stepKey } = req.body;
