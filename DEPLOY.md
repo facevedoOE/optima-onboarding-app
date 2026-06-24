@@ -72,7 +72,7 @@ have that, this part goes to Marvin/IT.
 
 ### 2a. Create the Web App
 - Azure portal → **App Services → Create**.
-- **Publish:** Code · **Runtime stack:** **Node 20 LTS** · **OS:** Linux.
+- **Publish:** Code · **Runtime stack:** **Node 22 LTS** · **OS:** Linux. (Node 24 also works — the app needs `>=18`; pick 22 LTS for stability.)
 - Pick a name → its URL is `https://<name>.azurewebsites.net` (this is your `APP_BASE_URL`,
   unless you map a custom domain like `https://onboarding.optimaed.com`).
 - **Configuration → General settings:** Startup Command `npm start`, **HTTPS Only = On**.
@@ -106,7 +106,7 @@ Back in the app registration (Part 1.1), set the Web redirect URI to exactly
 ### 2d. Deploy the code
 From this `app/` directory, the simplest one-shot:
 ```bash
-az webapp up --name <name> --resource-group <rg> --runtime "NODE:20-lts"
+az webapp up --name <name> --resource-group <rg> --runtime "NODE:22-lts"
 ```
 Or zip-deploy / a GitHub Actions workflow targeting the Web App. `node_modules`
 is gitignored; App Service runs `npm install` on deploy (Oryx build).
