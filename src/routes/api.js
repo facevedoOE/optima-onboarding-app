@@ -382,6 +382,18 @@ api.post('/candidates/import', async (req, res) => {
   res.json({ added, skipped, created });
 });
 
+// Update editable candidate fields (e.g. re-enter a mailing address after a bulk import).
+api.post('/candidates/:id', async (req, res) => {
+  const c = db.get('candidates', req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const allowed = ['firstName', 'lastName', 'email', 'position', 'employeeType', 'startDate', 'reportsTo', 'mailingAddress'];
+  const patch = {};
+  for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
+  const updated = db.update('candidates', c.id, patch);
+  await db.flush();
+  res.json(updated);
+});
+
 api.get('/candidates/:id', (req, res) => {
   const c = db.get('candidates', req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });

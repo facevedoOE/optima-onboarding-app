@@ -385,8 +385,15 @@ views['/candidate/:id'] = async (id) => {
     <div class="page-head">
       <div><h1>${esc(c.firstName)} ${esc(c.lastName)}</h1>
       <p class="sub">${esc(c.position || '—')} · ${esc(c.employeeType || '')} · starts ${esc(monthDay(c.startDate) || '—')}</p>
-      ${c.mailingAddress ? `<p class="sub" style="margin-top:2px">📦 ${esc(c.mailingAddress)}</p>` : ''}</div>
+      </div>
       <button class="btn ghost" id="sendLink">${c.portalLinkSentAt ? 'Resend' : 'Send'} portal link</button>
+    </div>
+    <div class="card" style="margin-bottom:16px;max-width:560px">
+      <label class="help" style="display:block;margin-bottom:4px">📦 Mailing address (for shipping)</label>
+      <div style="display:flex;gap:8px">
+        <input id="mailAddr" value="${esc(c.mailingAddress || '')}" placeholder="Street, City ST ZIP" style="flex:1">
+        <button class="btn sm" id="saveAddr">Save</button>
+      </div>
     </div>
     <h2>Access &amp; Hiring</h2>
     <div class="row"><div><div class="t">Leadership Request to Hire</div><div class="d">${c.leadershipRth ? esc(c.leadershipRth.roleName || 'Salary + sign-off') : 'No request yet — salary + HR→Finance→CEO sign-off.'}</div></div>
@@ -474,6 +481,10 @@ views['/candidate/:id'] = async (id) => {
           `<div class="note">Demo magic link (opens the candidate's portal — try it in a private window): <a href="${esc(r.link)}" target="_blank">${esc(r.link)}</a></div>`);
       }
     } catch (err) { toast(err.message); }
+  };
+  $('#saveAddr').onclick = async () => {
+    try { await api('/candidates/' + id, { method: 'POST', body: { mailingAddress: $('#mailAddr').value.trim() } }); toast('Mailing address saved'); }
+    catch (err) { toast(err.message); }
   };
 };
 
