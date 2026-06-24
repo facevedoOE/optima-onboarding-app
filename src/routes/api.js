@@ -510,7 +510,9 @@ api.post('/rth', (req, res) => {
       return { key, label: item.label, dept: def.departments[item.dept] || item.dept, kind: item.kind || 'software', status: 'requested' };
     })
     .filter(Boolean);
-  res.status(201).json(db.insert('accessRequests', { candidateId: linked?.id || null, data: finalData, roleId, roleName: role?.name, signatures, items, status: 'awaiting-signatures' }));
+  const created = db.insert('accessRequests', { candidateId: linked?.id || null, data: finalData, roleId, roleName: role?.name, signatures, items, status: 'awaiting-signatures' });
+  notifyApproverTurn(created, created.signatures[0]).catch(() => {}); // email the first approver it's their turn
+  res.status(201).json(created);
 });
 
 // Edit the requested permissions/access BEFORE approval — usable by HR (Gina) or
@@ -559,6 +561,25 @@ function permissionsRecipients(currentKeys, changedKeys = []) {
   return [...set];
 }
 
+// Signature-chain approvers — emailed when it becomes their turn to sign.
+const APPROVER_EMAILS = {
+  HR: 'gfalcone@optimaed.com',       // Gina Falcone
+  Finance: 'lrocafort@optimaed.com', // Lu Rocafort
+  CEO: 'amangana@optimaed.com',      // Adam Mangana
+};
+async function notifyApproverTurn(rth, step) {
+  const to = step && APPROVER_EMAILS[step.role];
+  if (!to) return;
+  const who = rth.data?.candidateName || 'a new hire';
+  const link = `${config.baseUrl}/#/rth/${rth.id}`;
+  await notify.email({
+    to, candidateId: rth.candidateId || undefined,
+    subject: `Signature needed: Request to Hire for ${who}`,
+    html: `<p>A Request to Hire for <strong>${who}</strong> is awaiting your signature (<strong>${step.label}</strong>).</p>
+      <p><a href="${link}">Review &amp; sign</a></p>`,
+  }).catch(() => {});
+}
+
 function labelForKey(key) {
   const def = db.find('formDefinitions', (d) => d.isRTH);
   return def?.accessCatalog.find((a) => a.key === key)?.label || key;
@@ -579,9 +600,17 @@ async function sendPermissionsEmail({ rth, recipients, added = [], removed = [],
     ${deltaHtml}
     <p>Current access:</p>
     <ul>${currentList}</ul>
+    <p>The attached access summary ${firstSend ? 'lists the requested permissions' : 'is marked UPDATED and reflects the revised permissions'} (no salary info).</p>
     <p><a href="${rthLink}">Open the Request to Hire</a></p>`;
+  // Attach the access-summary PDF — clearly banner-marked "UPDATED" on a resend.
+  let attachments;
+  try {
+    const bytes = await generatePermissionsPdf({ rth, updated: !firstSend });
+    writeFileSync(join(PDF_DIR, `${rth.id}-permissions.pdf`), bytes);
+    attachments = [{ name: `Permissions_${who.replace(/[^a-z0-9]+/gi, '_')}.pdf`, bytes }];
+  } catch { /* PDF optional — send the email without it rather than fail */ }
   for (const to of recipients) {
-    await notify.email({ to, candidateId: rth.candidateId || undefined, subject, html }).catch(() => {});
+    await notify.email({ to, candidateId: rth.candidateId || undefined, subject, html, attachments }).catch(() => {});
   }
 }
 
@@ -694,7 +723,7 @@ api.post('/rth/:id/sign', async (req, res) => {
         const [firstName, ...rest] = (r.data.candidateName || '').split(' ');
         await graph.createAccount({ candidate: { firstName, lastName: rest.join(' ') || '', email: r.data.email } }).catch(() => {});
       }
-      await notify.email({ to: config.mailFrom, subject: `RTH approved: ${r.data.candidateName}`, candidateId: linked?.id }).catch(() => {});
+      await notify.email({ to: config.mailFrom, subject: `Request to Hire approved: ${r.data.candidateName}`, candidateId: linked?.id }).catch(() => {});
       // Auto-route: email each selected item's owner to provision + mark it done.
       await notifyAccessOwners(r).catch(() => {});
       db.update('accessRequests', r.id, { status: 'approved' });
@@ -704,6 +733,7 @@ api.post('/rth/:id/sign', async (req, res) => {
     }
   } else {
     db.update('accessRequests', r.id, { status: 'awaiting-signatures' });
+    notifyApproverTurn(r, r.signatures.find((s) => !s.signedAt)).catch(() => {}); // email the next approver it's their turn
   }
   res.json(db.get('accessRequests', r.id));
 });
@@ -720,7 +750,7 @@ api.post('/rth/:id/provision', async (req, res) => {
   const r = db.get('accessRequests', req.params.id);
   if (!r) return res.status(404).json({ error: 'not found' });
   if (r.status !== 'approved' && r.status !== 'provisioning') {
-    return res.status(409).json({ error: 'RTH must be fully approved before provisioning' });
+    return res.status(409).json({ error: 'Request to Hire must be fully approved before provisioning' });
   }
   const item = r.items.find((i) => i.key === itemKey);
   if (!item) return res.status(404).json({ error: 'item not found' });
@@ -819,7 +849,7 @@ provisionerApi.get('/provisioner/rth/:id', (req, res) => {
 provisionerApi.post('/provisioner/rth/:id/provision', async (req, res) => {
   const r = db.get('accessRequests', req.params.id);
   if (!r) return res.status(404).json({ error: 'not found' });
-  if (r.status !== 'approved' && r.status !== 'provisioning') return res.status(409).json({ error: 'RTH must be approved first' });
+  if (r.status !== 'approved' && r.status !== 'provisioning') return res.status(409).json({ error: 'Request to Hire must be approved first' });
   const item = r.items.find((i) => i.key === req.body.itemKey);
   if (!item) return res.status(404).json({ error: 'item not found' });
   const linked = r.candidateId ? db.get('candidates', r.candidateId) : null;

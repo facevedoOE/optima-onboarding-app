@@ -662,9 +662,16 @@ async function rthNew(prefillId) {
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     const accessItems = [...view.querySelectorAll('input[name="acc"]:checked')].map((cb) => cb.value);
+    const roleId = $('#role').value || null;
     try {
-      const r = await api('/rth', { method: 'POST', body: { candidateId: $('#candidate').value || null, data: collectForm(e.target, def.fields), roleId: $('#role').value || null, accessItems } });
-      toast('Request submitted'); go('/rth/' + r.id);
+      const r = await api('/rth', { method: 'POST', body: { candidateId: $('#candidate').value || null, data: collectForm(e.target, def.fields), roleId, accessItems } });
+      // Same submit-to-send: file the request AND notify the access team of the permissions.
+      let note = 'Request submitted';
+      if (accessItems.length) {
+        try { const s = await api('/rth/' + r.id + '/permissions/submit', { method: 'POST', body: { accessItems, roleId } }); if (s.sent) note = `Request submitted — permissions sent to ${s.recipientCount}`; }
+        catch (_) { /* request is filed; permissions email can be re-sent from the detail page */ }
+      }
+      toast(note); go('/rth/' + r.id);
     } catch (err) { toast(err.message); }
   };
 }

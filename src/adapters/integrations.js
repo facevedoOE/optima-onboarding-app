@@ -142,21 +142,29 @@ export const graph = {
 };
 
 export const notify = {
-  async email({ to, subject, candidateId, html }) {
+  async email({ to, subject, candidateId, html, attachments }) {
+    // attachments: optional [{ name, bytes }] — e.g. the permissions PDF.
     if (!config.live) {
-      logActivity(candidateId, { kind: 'email', message: `Emailed ${to}: ${subject}` });
-      console.log(`[demo][notify] would email ${to} — ${subject}`);
+      const att = attachments?.length ? ` (with ${attachments.length} attachment: ${attachments.map((a) => a.name).join(', ')})` : '';
+      logActivity(candidateId, { kind: 'email', message: `Emailed ${to}: ${subject}${att}` });
+      console.log(`[demo][notify] would email ${to} — ${subject}${att}`);
       return { ok: true };
     }
     try {
-      await graphApi.post(`/users/${enc(config.mailFrom)}/sendMail`, {
-        message: {
-          subject,
-          body: { contentType: 'HTML', content: html || subject },
-          toRecipients: [{ emailAddress: { address: to } }],
-        },
-        saveToSentItems: true,
-      });
+      const message = {
+        subject,
+        body: { contentType: 'HTML', content: html || subject },
+        toRecipients: [{ emailAddress: { address: to } }],
+      };
+      if (attachments?.length) {
+        message.attachments = attachments.map((a) => ({
+          '@odata.type': '#microsoft.graph.fileAttachment',
+          name: a.name,
+          contentType: 'application/pdf',
+          contentBytes: Buffer.from(a.bytes).toString('base64'),
+        }));
+      }
+      await graphApi.post(`/users/${enc(config.mailFrom)}/sendMail`, { message, saveToSentItems: true });
       logActivity(candidateId, { kind: 'email', message: `Emailed ${to}: ${subject}` });
       return { ok: true };
     } catch (err) {

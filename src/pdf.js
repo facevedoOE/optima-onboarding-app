@@ -39,6 +39,8 @@ const BLUE = rgb(0.055, 0.11, 0.259); // #0E1C42
 const BIT = rgb(0.333, 0.784, 0.91); // #55C8E8
 const GREY = rgb(0.42, 0.45, 0.5);
 const LINE = rgb(0.89, 0.91, 0.94);
+const ORANGE = rgb(0.969, 0.561, 0.118); // #F78F1E — used for the "updated" banner
+const WHITE = rgb(1, 1, 1);
 
 function pretty(value) {
   if (value === true) return 'Yes';
@@ -50,7 +52,7 @@ function pretty(value) {
 
 // Permissions-only document for whoever provisions access. Deliberately omits
 // salary and approval details so permission-granters never see pay.
-export async function generatePermissionsPdf({ rth }) {
+export async function generatePermissionsPdf({ rth, updated = false }) {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -65,6 +67,14 @@ export async function generatePermissionsPdf({ rth }) {
   page.drawText(`${rth.data?.candidateName || ''} · ${rth.data?.position || ''} · starts ${rth.data?.startDate || ''}`, { x: M, y, size: 10, font, color: GREY }); y -= 13;
   page.drawText(`Role: ${rth.roleName || 'Custom access'}`, { x: M, y, size: 9, font, color: GREY }); y -= 10;
   page.drawLine({ start: { x: M, y }, end: { x: M + (612 - M * 2), y }, thickness: 1, color: LINE }); y -= 22;
+
+  // Obvious banner so recipients can tell at a glance this is a revised form.
+  if (updated) {
+    ensure(34);
+    page.drawRectangle({ x: M, y: y - 22, width: 612 - M * 2, height: 26, color: ORANGE });
+    page.drawText('UPDATED FORM — PERMISSIONS REVISED, PLEASE REVIEW', { x: M + 10, y: y - 14, size: 11, font: bold, color: WHITE });
+    y -= 40;
+  }
 
   const byDept = {};
   for (const it of (rth.items || [])) (byDept[it.dept] = byDept[it.dept] || []).push(it);
