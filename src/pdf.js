@@ -84,7 +84,7 @@ export async function generatePermissionsPdf({ rth, updated = false }) {
     for (const it of items) { ensure(16); page.drawText(`•  ${it.label}  (${it.status})`, { x: M + 8, y, size: 10, font, color: BLUE }); y -= 14; }
     y -= 6;
   }
-  const notes = [['Other software', rth.data?.softwareOther], ['Other hardware', rth.data?.hardwareOther], ['LLM / AI', rth.data?.llmDetails], ['Admin permissions', rth.data?.adminPermissions]].filter(([, v]) => v);
+  const notes = [['Mailing address', rth.data?.mailingAddress], ['Other software', rth.data?.softwareOther], ['Other hardware', rth.data?.hardwareOther], ['LLM / AI', rth.data?.llmDetails], ['Admin permissions', rth.data?.adminPermissions]].filter(([, v]) => v);
   if (notes.length) {
     ensure(24); page.drawText('NOTES', { x: M, y, size: 9, font: bold, color: BIT }); y -= 16;
     for (const [k, v] of notes) { ensure(16); page.drawText(`${k}: ${clip(v)}`, { x: M, y, size: 10, font, color: BLUE }); y -= 14; }

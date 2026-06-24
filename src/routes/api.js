@@ -116,10 +116,12 @@ function candidateDetail(c) {
       comingSoon: d.comingSoon || false,
     };
   });
-  const r = db.find('accessRequests', (a) => a.candidateId === c.id);
-  const rth = r ? { id: r.id, status: r.status, roleName: r.roleName } : null;
+  const reqs = db.filter('accessRequests', (a) => a.candidateId === c.id);
+  const mapReq = (r) => (r ? { id: r.id, status: r.status, roleName: r.roleName } : null);
+  const leadershipRth = mapReq(reqs.find((a) => (a.kind || 'leadership') === 'leadership'));
+  const permissionsRth = mapReq(reqs.find((a) => a.kind === 'permissions'));
   const references = db.filter('references', (x) => x.candidateId === c.id);
-  return { ...c, checklist, submissions: subs, rth, references };
+  return { ...c, checklist, submissions: subs, leadershipRth, permissionsRth, references };
 }
 
 async function buildAndFilePdf({ definition, submission, candidate }) {
@@ -491,26 +493,36 @@ api.get('/rth/:id', (req, res) => {
 
 api.post('/rth', (req, res) => {
   const { data, roleId, accessItems, candidateId } = req.body;
+  const kind = req.body.kind === 'permissions' ? 'permissions' : 'leadership';
   const def = db.find('formDefinitions', (d) => d.isRTH);
+  const appliesToKind = (f) => !f.kindOnly || f.kindOnly === kind;
   const isEmpty = (v) => v == null || (Array.isArray(v) ? v.length === 0 : String(v).trim() === '');
-  const missing = def.fields.filter((f) => f.required && isEmpty(data?.[f.key])).map((f) => f.label);
+  // Only require fields that apply to THIS request kind (salary→leadership, mailing→permissions).
+  const missing = def.fields.filter((f) => f.required && appliesToKind(f) && isEmpty(data?.[f.key])).map((f) => f.label);
   if (missing.length) return res.status(400).json({ error: 'Missing required fields', missing });
   // Link to a candidate record by stable ID — the thread that connects the lifecycle.
   const linked = candidateId ? db.get('candidates', candidateId) : null;
-  // Store only the form's declared field keys (drops arbitrary/__proto__ keys).
+  // Store only declared keys that apply to this kind (so salary never lands on a permissions request).
   const finalData = {};
-  for (const f of def.fields) if (data?.[f.key] !== undefined) finalData[f.key] = data[f.key];
+  for (const f of def.fields) if (appliesToKind(f) && data?.[f.key] !== undefined) finalData[f.key] = data[f.key];
   if (linked) finalData.candidateName = `${linked.firstName} ${linked.lastName}`;
   const role = db.get('accessRoles', roleId);
+
+  if (kind === 'permissions') {
+    // Access request — NO salary, NO signature chain. Filled in, then sent to the access team.
+    const items = (accessItems || [])
+      .map((key) => {
+        const item = def.accessCatalog.find((a) => a.key === key);
+        if (!item) return null;
+        return { key, label: item.label, dept: def.departments[item.dept] || item.dept, kind: item.kind || 'software', status: 'requested' };
+      })
+      .filter(Boolean);
+    return res.status(201).json(db.insert('accessRequests', { kind: 'permissions', candidateId: linked?.id || null, data: finalData, roleId, roleName: role?.name, signatures: [], items, status: 'open' }));
+  }
+
+  // Leadership request — salary + HR→Finance→CEO signature chain, NO access items.
   const signatures = def.signatureChain.map((s) => ({ ...s, signedAt: null, signedBy: null }));
-  const items = (accessItems || [])
-    .map((key) => {
-      const item = def.accessCatalog.find((a) => a.key === key);
-      if (!item) return null; // ignore keys that aren't in the catalog
-      return { key, label: item.label, dept: def.departments[item.dept] || item.dept, kind: item.kind || 'software', status: 'requested' };
-    })
-    .filter(Boolean);
-  const created = db.insert('accessRequests', { candidateId: linked?.id || null, data: finalData, roleId, roleName: role?.name, signatures, items, status: 'awaiting-signatures' });
+  const created = db.insert('accessRequests', { kind: 'leadership', candidateId: linked?.id || null, data: finalData, roleId, roleName: role?.name, signatures, items: [], status: 'awaiting-signatures' });
   notifyApproverTurn(created, created.signatures[0]).catch(() => {}); // email the first approver it's their turn
   res.status(201).json(created);
 });
@@ -520,7 +532,8 @@ api.post('/rth', (req, res) => {
 api.post('/rth/:id/permissions', (req, res) => {
   const r = db.get('accessRequests', req.params.id);
   if (!r) return res.status(404).json({ error: 'not found' });
-  if (r.status !== 'awaiting-signatures') {
+  // Permissions requests stay editable while open; leadership requests only before approval.
+  if (!(r.kind === 'permissions' ? r.status === 'open' : r.status === 'awaiting-signatures')) {
     return res.status(409).json({ error: 'Permissions can only be edited before the request is approved.' });
   }
   const def = db.find('formDefinitions', (d) => d.isRTH);
@@ -633,7 +646,7 @@ async function notifyAccessOwners(rth) {
 api.post('/rth/:id/permissions/submit', async (req, res) => {
   const r = db.get('accessRequests', req.params.id);
   if (!r) return res.status(404).json({ error: 'not found' });
-  if (r.status !== 'awaiting-signatures') {
+  if (!(r.kind === 'permissions' ? r.status === 'open' : r.status === 'awaiting-signatures')) {
     return res.status(409).json({ error: 'Permissions can only be sent before the request is approved.' });
   }
   const def = db.find('formDefinitions', (d) => d.isRTH);
@@ -749,7 +762,8 @@ api.post('/rth/:id/provision', async (req, res) => {
   const { itemKey } = req.body;
   const r = db.get('accessRequests', req.params.id);
   if (!r) return res.status(404).json({ error: 'not found' });
-  if (r.status !== 'approved' && r.status !== 'provisioning') {
+  // Permissions requests have no approval step — they're provisionable once open.
+  if (r.kind !== 'permissions' && r.status !== 'approved' && r.status !== 'provisioning') {
     return res.status(409).json({ error: 'Request to Hire must be fully approved before provisioning' });
   }
   const item = r.items.find((i) => i.key === itemKey);
@@ -849,7 +863,7 @@ provisionerApi.get('/provisioner/rth/:id', (req, res) => {
 provisionerApi.post('/provisioner/rth/:id/provision', async (req, res) => {
   const r = db.get('accessRequests', req.params.id);
   if (!r) return res.status(404).json({ error: 'not found' });
-  if (r.status !== 'approved' && r.status !== 'provisioning') return res.status(409).json({ error: 'Request to Hire must be approved first' });
+  if (r.kind !== 'permissions' && r.status !== 'approved' && r.status !== 'provisioning') return res.status(409).json({ error: 'Request to Hire must be approved first' });
   const item = r.items.find((i) => i.key === req.body.itemKey);
   if (!item) return res.status(404).json({ error: 'item not found' });
   const linked = r.candidateId ? db.get('candidates', r.candidateId) : null;

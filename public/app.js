@@ -370,12 +370,14 @@ views['/candidate/:id'] = async (id) => {
       <button class="btn ghost" id="sendLink">${c.portalLinkSentAt ? 'Resend' : 'Send'} portal link</button>
     </div>
     <h2>Access &amp; Hiring</h2>
-    ${c.rth
-      ? `<div class="row"><div><div class="t">Request to Hire</div><div class="d">${esc(c.rth.roleName || 'Custom access')}</div></div>
-          <div style="display:flex;gap:10px;align-items:center"><span class="pill ${c.rth.status}">${esc(c.rth.status.replace(/-/g, ' '))}</span>
-          <a class="btn ghost sm" href="#/rth/${c.rth.id}">Open</a></div></div>`
-      : `<div class="row"><div><div class="t">Request to Hire</div><div class="d">No request yet for this candidate.</div></div>
-          <button class="btn sm" id="newRth">Create Request to Hire</button></div>`}
+    <div class="row"><div><div class="t">Leadership Request to Hire</div><div class="d">${c.leadershipRth ? esc(c.leadershipRth.roleName || 'Salary + sign-off') : 'No request yet — salary + HR→Finance→CEO sign-off.'}</div></div>
+      <div style="display:flex;gap:10px;align-items:center">${c.leadershipRth
+        ? `<span class="pill ${c.leadershipRth.status}">${esc(c.leadershipRth.status.replace(/-/g, ' '))}</span><a class="btn ghost sm" href="#/rth/${c.leadershipRth.id}">Open</a>`
+        : `<button class="btn sm" id="newLeadershipRth">Create Leadership Request</button>`}</div></div>
+    <div class="row"><div><div class="t">Permissions Request to Hire</div><div class="d">${c.permissionsRth ? esc(c.permissionsRth.roleName || 'Access + mailing address') : 'No request yet — access + mailing address, no salary.'}</div></div>
+      <div style="display:flex;gap:10px;align-items:center">${c.permissionsRth
+        ? `<span class="pill ${c.permissionsRth.status}">${esc(c.permissionsRth.status.replace(/-/g, ' '))}</span><a class="btn ghost sm" href="#/rth/${c.permissionsRth.id}">Open</a>`
+        : `<button class="btn sm" id="newPermissionsRth">Create Permissions Request</button>`}</div></div>
     <h2 style="margin-top:24px">Onboarding checklist</h2>
     ${checklistHtml(c.checklist, true)}
     <h2 style="margin-top:24px;display:flex;align-items:center;justify-content:space-between;gap:12px">References
@@ -404,8 +406,10 @@ views['/candidate/:id'] = async (id) => {
       </ul></div></div>
     </div>`;
   view.querySelectorAll('[data-fill]').forEach((b) => b.onclick = () => go(`/fill/${id}/${b.dataset.fill}`));
-  const newRth = $('#newRth');
-  if (newRth) newRth.onclick = () => go('/rth/new/' + id);
+  const newLeadershipRth = $('#newLeadershipRth');
+  if (newLeadershipRth) newLeadershipRth.onclick = () => go('/rth/new/leadership/' + id);
+  const newPermissionsRth = $('#newPermissionsRth');
+  if (newPermissionsRth) newPermissionsRth.onclick = () => go('/rth/new/permissions/' + id);
 
   // References panel
   let editingRef = null;
@@ -596,13 +600,15 @@ views['/rth'] = async () => {
   view.innerHTML = `
     <div class="page-head"><div><h1>Request to Hire — Log</h1>
       <p class="sub">Every request, compiled. Replaces the wide spreadsheet.</p></div>
-      <button class="btn gold" id="new">+ New Request</button></div>
+      <div style="display:flex;gap:8px"><button class="btn" id="newLeadership">+ Leadership</button><button class="btn gold" id="newPermissions">+ Permissions</button></div></div>
     <div id="dt"></div>`;
-  $('#new').onclick = () => go('/rth/new');
+  $('#newLeadership').onclick = () => go('/rth/new/leadership');
+  $('#newPermissions').onclick = () => go('/rth/new/permissions');
   dataTable(view.querySelector('#dt'), {
     rows: list, exportName: 'request-to-hire', statusKey: 'status',
     columns: [
       { key: 'candidate', label: 'Candidate', get: (r) => r.data.candidateName || '', html: (r) => `<strong>${esc(r.data.candidateName || '')}</strong>` },
+      { key: 'type', label: 'Type', get: (r) => (r.kind === 'permissions' ? 'Permissions' : 'Leadership') },
       { key: 'position', label: 'Position', get: (r) => r.data.position || '' },
       { key: 'role', label: 'Role', get: (r) => r.roleName || 'Custom' },
       { key: 'payRate', label: 'Pay Rate', get: (r) => r.data.payRate || '', filter: false },
@@ -617,7 +623,9 @@ views['/rth'] = async () => {
   });
 };
 
-async function rthNew(prefillId) {
+async function rthNew(kind, prefillId) {
+  kind = kind === 'permissions' ? 'permissions' : 'leadership';
+  const isPerm = kind === 'permissions';
   const [def, roles, cands] = await Promise.all([api('/forms/request-to-hire'), api('/roles'), api('/candidates')]);
   const candsById = Object.fromEntries(cands.map((c) => [c.id, c]));
   const alpha = (a, b) => String(a.label).localeCompare(String(b.label));
@@ -625,24 +633,29 @@ async function rthNew(prefillId) {
   const equipment = def.accessCatalog.filter((it) => it.kind === 'hardware').sort(alpha);
   const accessGroups = [['Software & Products', software], ['Equipment', equipment]];
   const rolesAlpha = [...roles].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const applies = (fl) => !fl.kindOnly || fl.kindOnly === kind;
+  const title = isPerm ? 'Permissions Request to Hire' : 'Leadership Request to Hire';
   view.innerHTML = `
-    <div class="crumb"><a href="#/rth">Request to Hire</a> › New</div>
-    <h1>New Request to Hire</h1>
+    <div class="crumb"><a href="#/rth">Request to Hire</a> › New ${isPerm ? 'Permissions' : 'Leadership'}</div>
+    <h1>New ${title}</h1>
     <div class="card" style="max-width:760px">
+      <div class="note">${isPerm
+        ? 'Access provisioning — no salary. Pick the permissions and send to the access team (no sign-off).'
+        : 'Salary + leadership sign-off (HR → Finance → CEO). Access permissions live on the separate Permissions request.'}</div>
       <form id="f">
         <div class="field"><label>Link to candidate</label>
           <select id="candidate"><option value="">— not linked (standalone) —</option>
             ${cands.map((c) => `<option value="${c.id}" ${c.id === prefillId ? 'selected' : ''}>${esc(c.firstName)} ${esc(c.lastName)} · ${esc(c.position || '')}</option>`).join('')}</select>
-          <div class="help">Linking ties the approval, account, and access back to this candidate's record.</div></div>
-        ${def.fields.filter((fl) => fl.section !== 'access').map((fl) => renderField(fl)).join('')}
-        <h2>Access — pick a role to pre-fill</h2>
-        <div class="note">Instead of 30 yes/no columns, choose a role and the sensible default bundle is selected. Adjust as needed. Each item routes to its owning department automatically.</div>
+          <div class="help">Links this request back to the candidate's record.</div></div>
+        ${def.fields.filter((fl) => fl.section !== 'access' && applies(fl)).map((fl) => renderField(fl)).join('')}
+        ${isPerm ? `<h2>Access — pick a role to pre-fill</h2>
+        <div class="note">Choose a role and the sensible default bundle is selected. Adjust as needed.</div>
         <div class="field"><label>Role</label><select id="role"><option value="">Custom…</option>
           ${rolesAlpha.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select></div>
-        ${accessGroups.map(([title, items]) => items.length ? `<div class="dept-group"><h4>${esc(title)}</h4>
+        ${accessGroups.map(([t, items]) => items.length ? `<div class="dept-group"><h4>${esc(t)}</h4>
           <div class="check-grid">${items.map((it) => `<label class="chk"><input type="checkbox" name="acc" value="${it.key}" data-key="${it.key}"> ${esc(it.label)}</label>`).join('')}</div></div>` : '').join('')}
-        ${def.fields.filter((fl) => fl.section === 'access').map((fl) => renderField(fl)).join('')}
-        <button class="btn green" type="submit">Submit for signatures</button>
+        ${def.fields.filter((fl) => fl.section === 'access' && applies(fl)).map((fl) => renderField(fl)).join('')}` : ''}
+        <button class="btn green" type="submit">${isPerm ? 'Submit &amp; send' : 'Submit for signatures'}</button>
       </form>
     </div>`;
   const setField = (key, val) => { const el = view.querySelector(`[name="${key}"]`); if (el && val != null) el.value = val; };
@@ -655,28 +668,28 @@ async function rthNew(prefillId) {
   $('#candidate').onchange = (e) => applyCandidate(candsById[e.target.value]);
   if (prefillId) applyCandidate(candsById[prefillId]);
   const rolesById = Object.fromEntries(roles.map((r) => [r.id, r]));
-  $('#role').onchange = (e) => {
+  const roleSel = $('#role');
+  if (roleSel) roleSel.onchange = (e) => {
     const r = rolesById[e.target.value];
     view.querySelectorAll('input[name="acc"]').forEach((cb) => { cb.checked = r ? r.defaults.includes(cb.value) : false; });
   };
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     const accessItems = [...view.querySelectorAll('input[name="acc"]:checked')].map((cb) => cb.value);
-    const roleId = $('#role').value || null;
+    const roleId = roleSel ? (roleSel.value || null) : null;
     try {
-      const r = await api('/rth', { method: 'POST', body: { candidateId: $('#candidate').value || null, data: collectForm(e.target, def.fields), roleId, accessItems } });
-      // Same submit-to-send: file the request AND notify the access team of the permissions.
-      let note = 'Request submitted';
-      if (accessItems.length) {
-        try { const s = await api('/rth/' + r.id + '/permissions/submit', { method: 'POST', body: { accessItems, roleId } }); if (s.sent) note = `Request submitted — permissions sent to ${s.recipientCount}`; }
-        catch (_) { /* request is filed; permissions email can be re-sent from the detail page */ }
+      const r = await api('/rth', { method: 'POST', body: { kind, candidateId: $('#candidate').value || null, data: collectForm(e.target, def.fields), roleId, accessItems } });
+      let note = isPerm ? 'Permissions request created' : 'Leadership request submitted for signatures';
+      if (isPerm) {
+        try { const s = await api('/rth/' + r.id + '/permissions/submit', { method: 'POST', body: { accessItems, roleId } }); if (s.sent) note = `Permissions request created — sent to ${s.recipientCount}`; }
+        catch (_) { /* request is created; permissions can be re-sent from the detail page */ }
       }
       toast(note); go('/rth/' + r.id);
     } catch (err) { toast(err.message); }
   };
 }
-views['/rth/new'] = () => rthNew(null);
-views['/rth/new/:cid'] = (cid) => rthNew(cid);
+views['/rth/new/:kind'] = (kind) => rthNew(kind, null);
+views['/rth/new/:kind/:cid'] = (kind, cid) => rthNew(kind, cid);
 
 views['/rth/:id'] = async (id) => {
   const [r, def, roles] = await Promise.all([api('/rth/' + id), api('/forms/request-to-hire'), api('/roles')]);
@@ -698,20 +711,23 @@ views['/rth/:id'] = async (id) => {
       ${r.candidateId ? ` · <a href="#/candidate/${r.candidateId}">linked candidate ↗</a>` : ' · <em>not linked</em>'}</p></div>
       <span class="pill ${r.status}">${esc(r.status.replace(/-/g, ' '))}</span></div>
     <div class="grid g2">
-      <div><h2>Signature chain</h2><div class="card"><div class="sigchain">
+      <div>${r.kind === 'permissions'
+        ? `<h2>Access request</h2><div class="card"><div class="note">No sign-off needed — this request is filled in and sent to the access team.</div>
+          <div style="margin-top:10px"><strong>Mailing address</strong><div class="d">${esc(r.data.mailingAddress || '—')}</div></div></div>`
+        : `<h2>Signature chain</h2><div class="card"><div class="sigchain">
         ${r.signatures.map((s, i) => `<div class="sigstep ${s.signedAt ? 'signed' : (i === firstPending ? 'current' : '')}">
           <div class="sigdot">${s.signedAt ? '✓' : i + 1}</div>
           <div class="siginfo"><div class="who">${esc(s.label)} <span class="tag-soft">${esc(s.role)}</span></div>
             <div class="when">${s.signedAt ? 'Signed by ' + esc(s.signedBy) + ' · ' + fmtET(s.signedAt) : 'Awaiting signature'}</div></div>
           ${!s.signedAt && i === firstPending ? `<button class="btn sm" data-sign="${s.key}">Sign</button>` : ''}
         </div>`).join('')}
-      </div></div>
+      </div></div>`}
       ${r.status === 'approved' || r.status === 'provisioning' || r.status === 'complete'
         ? `<a class="btn ghost sm" style="margin-top:12px" href="/api/rth/${id}/pdf" target="_blank">View signed PDF</a>` : ''}
       </div>
       <div>
-      ${r.status === 'awaiting-signatures' ? `<h2>Permissions</h2><div class="card">
-        <div class="note">Set permissions any time before approval — HR or the hiring manager, in any order. <strong>Save</strong> keeps a draft; <strong>Submit &amp; send</strong> emails the access team. Re-submitting after a change notifies them only of what was added or removed.</div>
+      ${r.kind === 'permissions' ? `<h2>Permissions</h2><div class="card">
+        <div class="note">HR or the hiring manager can set these in any order. <strong>Save</strong> keeps a draft; <strong>Submit &amp; send</strong> emails the access team. Re-submitting after a change notifies them only of what was added or removed.</div>
         <div class="field"><label>Role (pre-fills a bundle)</label><select id="permRole"><option value="">Custom…</option>
           ${rolesAlpha.map((rr) => `<option value="${rr.id}" ${rr.id === r.roleId ? 'selected' : ''}>${esc(rr.name)}</option>`).join('')}</select></div>
         ${accessGroups.map(([title, gitems]) => gitems.length ? `<div class="dept-group"><h4>${esc(title)}</h4>
@@ -740,7 +756,7 @@ views['/rth/:id'] = async (id) => {
               <div class="t" style="font-size:.9rem">${esc(it.label)}${sub ? ` <span class="d">${sub}</span>` : ''}</div>
               <div class="row-actions">${actions}</div></div>`;
           }).join('')}
-        </div>`).join('') || '<div class="empty">No access items requested.</div>'}
+        </div>`).join('') || (r.kind === 'permissions' ? '<div class="empty">No access items requested yet.</div>' : '<div class="empty">Access is handled on the separate Permissions request.</div>')}
       </div>
       ${r.status !== 'awaiting-signatures' ? `<div class="card" style="margin-top:12px">
         <h4 class="dept-group" style="margin:0 0 10px">Offboarding</h4>
@@ -949,8 +965,8 @@ const routes = [
   ['/forms/new', views['/forms/new']],
   ['/forms/:key', views['/forms/:key']],
   ['/rth', views['/rth']],
-  ['/rth/new', views['/rth/new']],
-  ['/rth/new/:cid', views['/rth/new/:cid']],
+  ['/rth/new/:kind', views['/rth/new/:kind']],
+  ['/rth/new/:kind/:cid', views['/rth/new/:kind/:cid']],
   ['/rth/:id', views['/rth/:id']],
 ];
 

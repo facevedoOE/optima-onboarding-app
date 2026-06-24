@@ -264,14 +264,17 @@ const requestToHire = {
     { key: 'employeeType', label: 'Employee Type', type: 'select', required: true, options: EMPLOYEE_TYPES },
     { key: 'startDate', label: 'Start Date', type: 'date', required: true },
     { key: 'reportsTo', label: 'Reports To', type: 'text', required: true },
-    { key: 'payRate', label: 'Pay Rate', type: 'text', required: true },
+    // Salary lives only on the Leadership request.
+    { key: 'payRate', label: 'Pay Rate', type: 'text', required: true, kindOnly: 'leadership' },
     { key: 'email', label: 'Email', type: 'email' },
     { key: 'phone', label: 'Phone', type: 'tel' },
-    // "Specify" line items from the Adobe permissions form — rendered after the access list.
-    { key: 'softwareOther', label: 'Other software (please specify)', type: 'text', section: 'access' },
-    { key: 'hardwareOther', label: 'Other hardware (please specify)', type: 'text', section: 'access' },
-    { key: 'llmDetails', label: 'LLM / AI tools — details', type: 'text', section: 'access' },
-    { key: 'adminPermissions', label: 'Admin permissions / special access needed', type: 'textarea', section: 'access' },
+    // Mailing address lives only on the Permissions request (for equipment shipping).
+    { key: 'mailingAddress', label: 'Mailing Address', type: 'textarea', required: true, kindOnly: 'permissions' },
+    // "Specify" line items from the Adobe permissions form — access section, Permissions request only.
+    { key: 'softwareOther', label: 'Other software (please specify)', type: 'text', section: 'access', kindOnly: 'permissions' },
+    { key: 'hardwareOther', label: 'Other hardware (please specify)', type: 'text', section: 'access', kindOnly: 'permissions' },
+    { key: 'llmDetails', label: 'LLM / AI tools — details', type: 'text', section: 'access', kindOnly: 'permissions' },
+    { key: 'adminPermissions', label: 'Admin permissions / special access needed', type: 'textarea', section: 'access', kindOnly: 'permissions' },
   ],
 };
 formDefinitions.push(requestToHire);
