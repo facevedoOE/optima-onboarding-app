@@ -712,8 +712,9 @@ views['/rth/:id'] = async (id) => {
       <span class="pill ${r.status}">${esc(r.status.replace(/-/g, ' '))}</span></div>
     <div class="grid g2">
       <div>${r.kind === 'permissions'
-        ? `<h2>Access request</h2><div class="card"><div class="note">No sign-off needed — this request is filled in and sent to the access team.</div>
-          <div style="margin-top:10px"><strong>Mailing address</strong><div class="d">${esc(r.data.mailingAddress || '—')}</div></div></div>`
+        ? `<h2>Candidate info</h2><div class="card">
+          ${[['Name', r.data.candidateName], ['Position', r.data.position], ['Employee type', r.data.employeeType], ['Start date', r.data.startDate], ['Reports to', r.data.reportsTo], ['Email', r.data.email], ['Phone', r.data.phone], ['Mailing address', r.data.mailingAddress]].map(([k, v]) => `<div style="display:flex;justify-content:space-between;gap:16px;padding:4px 0;border-bottom:1px solid var(--line,#e6e9f0)"><span class="d">${k}</span><span style="text-align:right">${esc(v || '—')}</span></div>`).join('')}
+          <div class="note" style="margin-top:10px">No sign-off needed — filled in and sent to the access team.</div></div>`
         : `<h2>Signature chain</h2><div class="card"><div class="sigchain">
         ${r.signatures.map((s, i) => `<div class="sigstep ${s.signedAt ? 'signed' : (i === firstPending ? 'current' : '')}">
           <div class="sigdot">${s.signedAt ? '✓' : i + 1}</div>
