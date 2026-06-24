@@ -366,7 +366,8 @@ views['/candidate/:id'] = async (id) => {
     <div class="crumb"><a href="#/">Candidates</a> › ${esc(c.firstName)} ${esc(c.lastName)}</div>
     <div class="page-head">
       <div><h1>${esc(c.firstName)} ${esc(c.lastName)}</h1>
-      <p class="sub">${esc(c.position || '—')} · ${esc(c.employeeType || '')} · starts ${esc(monthDay(c.startDate) || '—')}</p></div>
+      <p class="sub">${esc(c.position || '—')} · ${esc(c.employeeType || '')} · starts ${esc(monthDay(c.startDate) || '—')}</p>
+      ${c.mailingAddress ? `<p class="sub" style="margin-top:2px">📦 ${esc(c.mailingAddress)}</p>` : ''}</div>
       <button class="btn ghost" id="sendLink">${c.portalLinkSentAt ? 'Resend' : 'Send'} portal link</button>
     </div>
     <h2>Access &amp; Hiring</h2>
@@ -665,6 +666,7 @@ async function rthNew(kind, prefillId) {
     setField('position', c.position); setField('employeeType', c.employeeType);
     setField('startDate', c.startDate); setField('email', c.email);
     if (c.reportsTo) setField('reportsTo', c.reportsTo);
+    if (c.mailingAddress) setField('mailingAddress', c.mailingAddress);
   };
   $('#candidate').onchange = (e) => applyCandidate(candsById[e.target.value]);
   if (prefillId) applyCandidate(candsById[prefillId]);
