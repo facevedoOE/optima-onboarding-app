@@ -6,7 +6,9 @@
   "description": "Optima HR onboarding web app — schema-driven forms, candidate-centric data, role-based access provisioning",
   "scripts": {
     "start": "node server.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "seed:config": "node -e \"import('./src/seed.js').then(m => m.seedConfig())\"",
+    "backfill:sharepoint": "node src/backfill-sharepoint.js"
   },
   "engines": {
     "node": ">=18"

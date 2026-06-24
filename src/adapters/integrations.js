@@ -32,6 +32,15 @@ export const sharepoint = {
     const folder = candidate ? `${candidate.lastName}, ${candidate.firstName}` : 'Unassigned';
     const relPath = `${config.sharepoint.basePath}/${folder}/${fileName}`;
 
+    // SharePoint filing is OPTIONAL. With no site configured, the PDF still lives
+    // in the app (data/pdfs) and is downloadable per candidate — we just skip the
+    // extra copy to the HR library rather than erroring. Lets live mode run
+    // without granting Sites.Selected.
+    if (config.live && !config.sharepoint.siteId) {
+      logActivity(candidate?.id, { kind: 'filed', message: `“${fileName}” kept in the app (SharePoint not configured)` });
+      return { path: null, skipped: true };
+    }
+
     if (!config.live) {
       logActivity(candidate?.id, { kind: 'filed', message: `Filed “${fileName}” to ${config.sharepoint.basePath}/${folder}` });
       console.log(`[demo][sharepoint] would file ${bytes?.length ?? 0} bytes -> [HR site]/${relPath}`);
